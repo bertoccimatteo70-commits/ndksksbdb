@@ -4,10 +4,13 @@ import com.badlogic.gdx.Application;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.utils.Align;
 import it.pta.audio.AudioEngine;
 import it.pta.entity.CameraRig;
 import it.pta.entity.Player;
@@ -42,28 +45,51 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     private int perfFrames;
     private boolean perfWarned;
     private boolean campaignFinished;
+    private Throwable fatal;
+    private SpriteBatch fatalBatch;
+    private BitmapFont fatalFont;
+    private String fatalMessage = "";
 
     @Override
     public void create() {
         Gdx.app.setLogLevel(Application.LOG_INFO);
+        try {
+            initGame();
+            Gdx.app.log("PTA", "startup complete");
+        } catch (Throwable t) {
+            fail(t);
+        }
+    }
+
+    private void initGame() {
+        Gdx.app.log("PTA", "startup: settings");
         settings = Settings.load();
+        Gdx.app.log("PTA", "startup: loading map");
         byte[] mapBytes = Gdx.files.internal("map/pta_map.bin").readBytes();
         map = MapData.load(mapBytes);
+        Gdx.app.log("PTA", "startup: map loaded buildings=" + map.buildings.length
+                + " roads=" + map.roads.length + " areas=" + map.areas.length);
         String missionsJson = Gdx.files.internal("data/missions.json").readString("UTF-8");
         String landmarksJson = Gdx.files.internal("map/landmarks.json").readString("UTF-8");
+        Gdx.app.log("PTA", "startup: renderer");
         renderer = new it.pta.render.WorldRenderer(map, settings.renderHeight);
+        Gdx.app.log("PTA", "startup: ui assets");
         assets = new UiAssets();
+        Gdx.app.log("PTA", "startup: audio");
         audio = new AudioEngine();
         input = new InputState();
         saves = new SaveManager(Gdx.files.local("saves/"));
+        Gdx.app.log("PTA", "startup: world");
         world = new World(renderer, settings, audio, input, missionsJson, landmarksJson);
         world.setListener(this);
         rig = new CameraRig((float) Gdx.graphics.getWidth() / Math.max(1, Gdx.graphics.getHeight()));
         rig.setAspect((float) Gdx.graphics.getWidth() / Math.max(1, Gdx.graphics.getHeight()));
+        Gdx.app.log("PTA", "startup: menu");
         ui = new GameUi(assets, settings, saves, input, world, this);
         intro = new IntroCinematic(assets, map);
         batch = new SpriteBatch();
         applySettings();
+        Gdx.app.log("PTA", "startup: intro");
         Gdx.input.setCatchKey(Input.Keys.BACK, true);
         Gdx.input.setInputProcessor(null);
         mode = Mode.INTRO;
@@ -75,6 +101,18 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
 
     @Override
     public void render() {
+        if (fatal != null) {
+            drawFatal();
+            return;
+        }
+        try {
+            renderFrame();
+        } catch (Throwable t) {
+            fail(t);
+        }
+    }
+
+    private void renderFrame() {
         float delta = Math.min(Gdx.graphics.getDeltaTime(), 0.05f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
@@ -119,6 +157,9 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     }
 
     private void renderScene(float delta) {
+        // Streams the city around the current camera. This must run on the GL thread:
+        // chunk workers only build data, while uploadFinished() creates the meshes here.
+        renderer.chunkManager().update(rig.camera.position, delta);
         renderer.beginFrame(rig.camera, delta);
         renderer.drawWorld(rig.camera);
         if (mode == Mode.PLAY) {
@@ -351,6 +392,12 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
             world.startMission(first);
         }
         updateCamera(0.016f);
+        Player p = world.player();
+        Gdx.app.log("PTA", "new game: player=" + p.x + "," + p.y + "," + p.z
+                + " ground=" + map.heightAt(p.x, p.z)
+                + " blocked=" + map.blocked(p.x, p.z, 0.55f)
+                + " camera=" + rig.camera.position
+                + " chunks=" + renderer.chunkManager().loadedChunks());
     }
 
     @Override
@@ -514,8 +561,47 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         }
     }
 
+    private void fail(Throwable t) {
+        if (fatal == null) {
+            fatal = t;
+            fatalMessage = t.getClass().getSimpleName() + ": " + String.valueOf(t.getMessage());
+            Gdx.app.error("PTA", "startup/render failure", t);
+        }
+    }
+
+    /** Non-black, readable fallback instead of leaving the player on a black surface. */
+    private void drawFatal() {
+        Gdx.gl.glClearColor(0.06f, 0.02f, 0.03f, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+        try {
+            if (fatalFont == null) {
+                fatalFont = new BitmapFont();
+                fatalBatch = new SpriteBatch();
+            }
+            int w = Math.max(320, Gdx.graphics.getWidth());
+            int h = Math.max(240, Gdx.graphics.getHeight());
+            fatalBatch.getProjectionMatrix().setToOrtho2D(0, 0, w, h);
+            fatalBatch.begin();
+            fatalFont.setColor(new Color(1f, 0.82f, 0.76f, 1f));
+            fatalFont.draw(fatalBatch, "PTA - ERRORE DI AVVIO\n\n" + fatalMessage
+                    + "\n\nIl gioco non puo' partire su questo dispositivo.\n"
+                    + "Apri il Logcat e cerca il tag PTA per il dettaglio.",
+                    32, h - 48, w - 64, Align.left, true);
+            fatalBatch.end();
+        } catch (Throwable ignored) {
+            // Even the fallback can fail on a broken GL context; the dark red clear
+            // still makes the failure visible instead of a black screen.
+        }
+    }
+
     @Override
     public void dispose() {
+        if (fatalBatch != null) {
+            fatalBatch.dispose();
+        }
+        if (fatalFont != null) {
+            fatalFont.dispose();
+        }
         if (world != null) {
             world.dispose();
         }

@@ -13,6 +13,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane;
 import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.Slider;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
+import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Disposable;
@@ -33,9 +34,15 @@ public final class UiAssets implements Disposable {
     public final BitmapFont huge;
     public final Skin skin;
     public final float density;
+    /** Scale applied to the fixed-size font atlases so text follows screen density. */
+    public final float fontScale;
 
     public UiAssets() {
         density = Math.max(1f, Math.min(3f, Gdx.graphics.getDensity()));
+        // Font atlases are generated once at fixed, modest sizes and scaled at runtime.
+        // Generating 19..64 px * density atlases synchronously on the GL thread could take
+        // tens of seconds on low-end phones, leaving the player on a black screen.
+        fontScale = Math.max(1f, Math.min(1.5f, density / 2f));
         white = solid();
         whiteRegion = new TextureRegion(white);
         circle = circleTexture(128);
@@ -47,21 +54,32 @@ public final class UiAssets implements Disposable {
                 new Color(0.55f, 0.74f, 0.90f, 1f));
         logo = loadTexture("ui/logo.png");
 
-        int body = Math.round(19 * density);
-        int smallPx = Math.round(15 * density);
-        int titlePx = Math.round(40 * density);
-        int hugePx = Math.round(64 * density);
-        font = font(body, 0f);
-        small = font(smallPx, 0f);
-        title = font(titlePx, Math.round(2 * density));
-        huge = font(hugePx, Math.round(3 * density));
+        // Fixed sizes keep FreeType rasterisation fast on every device; fontScale restores
+        // the physical size without rebuilding huge atlases.
+        FreeTypeFontGenerator generator =
+                new FreeTypeFontGenerator(Gdx.files.internal("fonts/DejaVuSans.ttf"));
+        font = font(generator, 18, 0f);
+        small = font(generator, 14, 0f);
+        title = font(generator, 26, 1);
+        huge = font(generator, 36, 2);
+        generator.dispose();
+        font.getData().setScale(fontScale);
+        small.getData().setScale(fontScale);
+        title.getData().setScale(fontScale);
+        huge.getData().setScale(fontScale);
 
         skin = new Skin();
-        skin.add("white", new TextureRegionDrawable(new TextureRegion(white)));
-        skin.add("circle", new TextureRegionDrawable(new TextureRegion(circle)));
-        skin.add("panel9", new NinePatchDrawable(new NinePatch(new TextureRegion(panel), 24, 24, 24, 24)));
-        skin.add("btn9up", new NinePatchDrawable(new NinePatch(new TextureRegion(buttonUp), 24, 24, 24, 24)));
-        skin.add("btn9down", new NinePatchDrawable(new NinePatch(new TextureRegion(buttonDown), 24, 24, 24, 24)));
+        // Skin stores resources by their concrete class. Register drawables explicitly as
+        // Drawable, otherwise getDrawable()/newDrawable() cannot find them and the UI
+        // constructor throws during startup (the original black-screen bug).
+        skin.add("white", new TextureRegionDrawable(new TextureRegion(white)), Drawable.class);
+        skin.add("circle", new TextureRegionDrawable(new TextureRegion(circle)), Drawable.class);
+        skin.add("panel9", new NinePatchDrawable(new NinePatch(new TextureRegion(panel), 24, 24, 24, 24)),
+                Drawable.class);
+        skin.add("btn9up", new NinePatchDrawable(new NinePatch(new TextureRegion(buttonUp), 24, 24, 24, 24)),
+                Drawable.class);
+        skin.add("btn9down", new NinePatchDrawable(new NinePatch(new TextureRegion(buttonDown), 24, 24, 24, 24)),
+                Drawable.class);
 
         skin.add("default", new Label.LabelStyle(font, new Color(0.92f, 0.94f, 0.97f, 1f)));
         skin.add("small", new Label.LabelStyle(small, new Color(0.78f, 0.82f, 0.88f, 1f)));
@@ -221,8 +239,7 @@ public final class UiAssets implements Disposable {
         }
     }
 
-    private BitmapFont font(int size, float border) {
-        FreeTypeFontGenerator gen = new FreeTypeFontGenerator(Gdx.files.internal("fonts/DejaVuSans.ttf"));
+    private BitmapFont font(FreeTypeFontGenerator generator, int size, float border) {
         FreeTypeFontGenerator.FreeTypeFontParameter p = new FreeTypeFontGenerator.FreeTypeFontParameter();
         p.size = size;
         p.color = Color.WHITE;
@@ -231,9 +248,7 @@ public final class UiAssets implements Disposable {
         p.minFilter = Texture.TextureFilter.Linear;
         p.magFilter = Texture.TextureFilter.Linear;
         p.characters = FreeTypeFontGenerator.DEFAULT_CHARS + "€·←→↑↓▲▼◀▶★✓";
-        BitmapFont f = gen.generateFont(p);
-        gen.dispose();
-        return f;
+        return generator.generateFont(p);
     }
 
     public float dp(float v) {

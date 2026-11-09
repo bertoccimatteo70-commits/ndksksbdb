@@ -64,9 +64,9 @@ public final class Hud extends Actor {
             for (int i = 0; i < 5; i++) {
                 sb.append(i < stars ? "★" : "☆");
             }
-            a.title.getData().setScale(0.62f);
+            a.title.getData().setScale(a.fontScale * 0.62f);
             a.title.draw(batch, sb.toString(), w - a.dp(268), h - a.dp(300));
-            a.title.getData().setScale(1f);
+            a.title.getData().setScale(a.fontScale);
             a.small.setColor(0.96f, 0.55f, 0.30f, 1f);
             a.small.draw(batch, "RICERCATO", w - a.dp(268), h - a.dp(316));
         }

@@ -182,11 +182,11 @@ public final class TouchControls extends Actor {
                 label = id.toUpperCase();
             }
             assets.small.setColor(0.95f, 0.97f, 1f, alpha);
-            assets.small.getData().setScale(0.85f + 0.2f * layout.scale);
+            assets.small.getData().setScale(assets.fontScale * (0.85f + 0.2f * layout.scale));
             com.badlogic.gdx.graphics.g2d.GlyphLayout gl = new com.badlogic.gdx.graphics.g2d.GlyphLayout();
             gl.setText(assets.small, label);
             assets.small.draw(batch, gl, p.x - gl.width * 0.5f, p.y + gl.height * 0.5f);
-            assets.small.getData().setScale(1f);
+            assets.small.getData().setScale(assets.fontScale);
         }
         if (layout.editing) {
             batch.setColor(0.03f, 0.05f, 0.08f, 0.55f);
