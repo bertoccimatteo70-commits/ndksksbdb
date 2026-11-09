@@ -73,13 +73,16 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk PTA-1.0.1.apk
-          NOTES="Correzione verificata della schermata nera all'avvio. Crash Skin btn9up risolto; uniform u_time rimosso; streaming chunk attivo; spawn sicuro; fallback con messaggio al posto del nero. Avvio, intro, menu e partita verificati su Android 8.0 (API 26). APK debug installabile: arm64-v8a, armeabi-v7a, x86_64."
-          if gh release view v1.0.1 >/dev/null 2>&1; then
-            gh release upload v1.0.1 PTA-1.0.1.apk --clobber
+          VERSION="1.0.2"
+          TAG="v${VERSION}"
+          APK="PTA-${VERSION}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          NOTES="Mondo OSM completo: 71.844 edifici, 26.296 strade, 4.785 aree, 2.321 POI, 70 interni visitabili. Il file integro resta nello storage interno; la RAM conserva solo indice e chunk vicini, con cache limitata e scaricamento dei chunk lontani. LOD 1/2 mantiene ogni edificio. APK debug installabile: arm64-v8a, armeabi-v7a, x86_64."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
           else
-            gh release create v1.0.1 PTA-1.0.1.apk \
-              --title "PTA 1.0.1 - fix schermata nera" \
+            gh release create "$TAG" "$APK" \
+              --title "PTA 1.0.2 - mondo OSM completo" \
               --target "$GITHUB_SHA" \
               --notes "$NOTES"
           fi

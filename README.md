@@ -77,8 +77,12 @@ Numeri della mappa cotta in `app/src/main/assets/map/pta_map.bin` (7,7 MB):
 - 3.876 nomi, 236 etichette di località
 
 Formato binario compresso con: proiezione metrica locale (origine 43.9333 N, 10.9167 E),
-indice CSR per chunk da 512 m, altezze int16 su griglia 64 m, geometrie a 16 bit.
-La mappa è continua e liberamente esplorabile; il streaming carica solo i chunk vicini.
+altezze int16 su griglia 64 m, geometrie a 16 bit. Il file **completo** viene copiato
+nello storage interno al primo avvio e mappato in sola lettura: `MapData` tiene in RAM
+solo gli offset e l'indice dei chunk, non le 71.844 geometrie. La geometria viene
+decodificata quando un chunk entra nel raggio di streaming (cache massima: 16 chunk di
+edifici, 1.024 strade, 512 aree). La mappa resta continua e liberamente esplorabile;
+nessun edificio, strada, area o POI viene eliminato dal file o dal mondo.
 
 ---
 
@@ -195,9 +199,10 @@ python3 tools/branding/make_icons.py
   la categoria resta nel catalogo e nei modelli, non è utilizzabile in missione.
 - **Nessun doppiaggio registrato**: i dialoghi sono testuali con voce sintetica
   (blip) e sottotitoli; i volumi dialoghi controllano quel canale.
-- **Interni**: una stanza 3D reale per case e una per garage, condivisa da tutte le
-  proprietà (arredi e planimetria identici, posizione diversa). Non sono modellati
-  interni unici per ogni abitazione.
+- **Interni**: 70 edifici OSM selezionati sono visitabili. La mesh della stanza
+  (dimensioni, colori e arredi variano in base all'edificio) viene generata solo
+  all'ingresso e liberata all'uscita; non ci sono 70 interni contemporaneamente in RAM.
+  Non sono ancora modellati interni architettonicamente unici per ogni singola casa.
 - **Armi**: solo combattimento corpo a corpo; il cambio arma non è implementato.
 - **Telefono** non implementato come schermata dedicata; le missioni si avviano dal
   menu Missioni e dalle offerte di trama.

@@ -108,8 +108,9 @@ public final class ChunkManager implements Disposable {
                 Chunk existing = chunks.get(k);
                 if (existing != null) {
                     existing.lastUsed = frame;
-                    if (existing.geometry != null && existing.lod > lod && existing.parts != null) {
-                        // player approached: schedule a sharper rebuild
+                    if (existing.geometry != null && existing.parts != null
+                            && existing.lod != lod && !building.contains(k)) {
+                        // LOD changed: rebuild sharper when approaching, cheaper when leaving.
                         existing.lod = lod;
                         schedule(c, r, lod, k);
                     }
@@ -181,9 +182,6 @@ public final class ChunkManager implements Disposable {
     }
 
     private void evict(Vector3 pos) {
-        if (chunks.size() < 40) {
-            return;
-        }
         Iterator<Map.Entry<Long, Chunk>> it = chunks.entrySet().iterator();
         List<Chunk> drop = new ArrayList<>();
         while (it.hasNext()) {
@@ -200,6 +198,7 @@ public final class ChunkManager implements Disposable {
         for (Chunk c : drop) {
             disposeMeshes(c);
             chunks.remove(key(c.cx, c.cz));
+            map.releaseChunk(c.cx, c.cz);
         }
     }
 
@@ -332,5 +331,6 @@ public final class ChunkManager implements Disposable {
             disposeMeshes(c);
         }
         chunks.clear();
+        map.releaseAllChunks();
     }
 }

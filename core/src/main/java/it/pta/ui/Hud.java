@@ -194,25 +194,14 @@ public final class Hud extends Actor {
             segments.clear();
             float px = world.player().x;
             float pz = world.player().z;
-            for (MapData.RoadWay r : world.map.roads) {
-                if (r.maxX < px - 300 || r.minX > px + 300 || r.maxZ < pz - 300 || r.minZ > pz + 300) {
-                    continue;
-                }
-                float[] pts = r.pts;
-                for (int i = 0; i + 3 < pts.length; i += 2) {
-                    float x0 = pts[i], z0 = pts[i + 1], x1 = pts[i + 2], z1 = pts[i + 3];
-                    if (Math.abs(x0 - px) > 300 || Math.abs(z0 - pz) > 300) {
-                        continue;
-                    }
-                    segments.add(new float[]{x0, z0, x1, z1, r.drivable ? 1 : 0});
-                    if (segments.size() > 520) {
-                        break;
-                    }
-                }
-                if (segments.size() > 520) {
-                    break;
-                }
-            }
+            world.map.forEachRoadSegment(px - 300, pz - 300, px + 300, pz + 300,
+                    (x0, z0, x1, z1, drivable) -> {
+                        if (Math.abs(x0 - px) > 300 || Math.abs(z0 - pz) > 300) {
+                            return true;
+                        }
+                        segments.add(new float[]{x0, z0, x1, z1, drivable ? 1 : 0});
+                        return segments.size() < 520;
+                    }, 520);
         }
 
         for (float[] s : segments) {

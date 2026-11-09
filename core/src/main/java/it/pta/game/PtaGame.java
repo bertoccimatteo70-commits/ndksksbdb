@@ -65,10 +65,16 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         Gdx.app.log("PTA", "startup: settings");
         settings = Settings.load();
         Gdx.app.log("PTA", "startup: loading map");
-        byte[] mapBytes = Gdx.files.internal("map/pta_map.bin").readBytes();
-        map = MapData.load(mapBytes);
-        Gdx.app.log("PTA", "startup: map loaded buildings=" + map.buildings.length
-                + " roads=" + map.roads.length + " areas=" + map.areas.length);
+        com.badlogic.gdx.files.FileHandle mapAsset = Gdx.files.internal("map/pta_map.bin");
+        com.badlogic.gdx.files.FileHandle mapLocal = Gdx.files.local("world/pta_map.bin");
+        if (!mapLocal.exists() || mapLocal.length() != mapAsset.length()) {
+            mapLocal.parent().mkdirs();
+            mapAsset.copyTo(mapLocal);
+        }
+        map = MapData.open(mapLocal.file());
+        Gdx.app.log("PTA", "startup: map loaded buildings=" + map.buildingCount
+                + " roads=" + map.roadCount + " areas=" + map.areaCount
+                + " pois=" + map.poiCount);
         String missionsJson = Gdx.files.internal("data/missions.json").readString("UTF-8");
         String landmarksJson = Gdx.files.internal("map/landmarks.json").readString("UTF-8");
         Gdx.app.log("PTA", "startup: renderer");

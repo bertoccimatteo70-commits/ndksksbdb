@@ -17,7 +17,7 @@ import java.util.Map;
  * Businesses, houses and shop names are fictional and original to PTA.
  */
 public final class Content {
-    public enum Kind {GARAGE, HOME, SHOP, DEALER, TUNING, FUEL, POLICE, HOSPITAL, BUSINESS, MISSION, LANDMARK}
+    public enum Kind {GARAGE, HOME, SHOP, DEALER, TUNING, FUEL, POLICE, HOSPITAL, BUSINESS, MISSION, LANDMARK, INTERIOR}
 
     public static final class Place {
         public final String id, label;
@@ -102,6 +102,32 @@ public final class Content {
         for (int i = 0; i < TOWN_NAMES.length; i++) {
             float[] p = town(TOWN_NAMES[i], TOWN_FALLBACK[i][0], TOWN_FALLBACK[i][1]);
             TOWNS.putIfAbsent(TOWN_NAMES[i].toLowerCase(), p);
+        }
+
+        // Seventy real OSM landmark buildings are visitable. Their interior mesh is
+        // generated only when the player enters; no room is kept in RAM otherwise.
+        int interiorCount = 0;
+        for (Map.Entry<String, float[]> e : LANDMARKS.entrySet()) {
+            if (interiorCount >= 70) {
+                break;
+            }
+            String landmarkName = e.getKey();
+            float[] point = e.getValue();
+            if (landmarkName == null || landmarkName.trim().isEmpty() || point == null) {
+                continue;
+            }
+            // Put the entrance on the nearest drivable road: large OSM footprints
+            // would otherwise make the centroid unreachable from the pavement.
+            float ix = point[0];
+            float iz = point[1];
+            MapData.RoadHit entrance = map.nearestRoad(ix, iz, true, 90f);
+            if (entrance != null) {
+                ix = entrance.x;
+                iz = entrance.z;
+            }
+            place("interno_" + interiorCount, "Interno · " + landmarkName,
+                    Kind.INTERIOR, ix, iz, 0, 0, false);
+            interiorCount++;
         }
 
         // Core story locations
@@ -259,6 +285,11 @@ public final class Content {
 
     public static List<Place> landmarks() {
         return ofKind(Kind.LANDMARK);
+    }
+
+    /** The 70 OSM buildings whose interiors can be entered. */
+    public static List<Place> interiors() {
+        return ofKind(Kind.INTERIOR);
     }
 
     public static Map<String, float[]> rawLandmarks() {

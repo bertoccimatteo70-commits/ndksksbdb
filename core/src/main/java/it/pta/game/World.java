@@ -89,8 +89,6 @@ public final class World implements PoliceSystem.PoliceHost {
     private float weatherTimer = 75f;
     private float rainTarget;
     private boolean handledBusted;
-    private Mesh homeMesh;
-    private Mesh garageMesh;
     private Interior interior;
     private float interiorHotX, interiorHotZ;
     private String interiorHotKind = "door";
@@ -111,15 +109,24 @@ public final class World implements PoliceSystem.PoliceHost {
         public final float cx, cz, floorY;
         public final boolean garage;
         public final Mesh mesh;
-        public final float halfX = 5.5f, halfZ = 4.5f;
+        public final float halfX, halfZ;
 
-        Interior(Content.Place place, float cx, float cz, float floorY, boolean garage, Mesh mesh) {
+        Interior(Content.Place place, float cx, float cz, float floorY, boolean garage, Mesh mesh,
+                 float halfX, float halfZ) {
             this.place = place;
             this.cx = cx;
             this.cz = cz;
             this.floorY = floorY;
             this.garage = garage;
             this.mesh = mesh;
+            this.halfX = halfX;
+            this.halfZ = halfZ;
+        }
+
+        void dispose() {
+            if (mesh != null) {
+                mesh.dispose();
+            }
         }
     }
 
@@ -136,6 +143,9 @@ public final class World implements PoliceSystem.PoliceHost {
         this.missions = new MissionSystem(this, map);
 
         Content.init(map, landmarksJson);
+        Gdx.app.log("PTA", "world: OSM buildings=" + map.buildingCount
+                + " roads=" + map.roadCount + " areas=" + map.areaCount
+                + " pois=" + map.poiCount + " interiors=" + Content.interiors().size());
         missions.load(missionsJson);
 
         marco = new Humanoid("Marco Bellandi",
@@ -180,7 +190,6 @@ public final class World implements PoliceSystem.PoliceHost {
             v.setPaint(2);
             ownedVehicles.add(v);
         }
-        buildInteriors();
         renderer.sun.setHours(9f);
     }
 
@@ -610,6 +619,13 @@ public final class World implements PoliceSystem.PoliceHost {
             return;
         }
         switch (near.kind) {
+            case INTERIOR:
+                prompt = "Entra in " + near.label;
+                if (input.interact) {
+                    input.interact = false;
+                    enterProperty(near);
+                }
+                break;
             case HOME:
             case GARAGE:
                 if (economy.owns(near.id) || "garage".equals(near.id) || "casa_elisa".equals(near.id)) {
@@ -684,25 +700,23 @@ public final class World implements PoliceSystem.PoliceHost {
 
     // ---------------------------------------------------------------- interiors
 
-    private void buildInteriors() {
-        MeshBuilder home = new MeshBuilder();
-        room(home, false);
-        homeMesh = Meshes.from(home);
-        MeshBuilder garage = new MeshBuilder();
-        room(garage, true);
-        garageMesh = Meshes.from(garage);
-    }
-
-    /** Builds a local-space room: floor, walls, ceiling and furniture. */
-    private void room(MeshBuilder mb, boolean garage) {
-        float hx = 5.5f, hz = 4.5f, h = 3.0f;
-        float floorTone = garage ? 0.42f : 0.58f;
+    /**
+     * Builds the local-space room for one building. Geometry is created only when the
+     * player enters and is disposed on exit, so seventy interiors do not occupy RAM
+     * at the same time.
+     */
+    private void room(MeshBuilder mb, boolean garage, float hx, float hz, long seed) {
+        float h = 3.0f;
+        float variance = (float) ((seed & 0xFF) / 255.0) * 0.08f - 0.04f;
+        float floorTone = (garage ? 0.42f : 0.58f) + variance;
         // floor
         mb.flatQuad(-hx, -hz, hx, hz, 0.02f, floorTone, floorTone * 0.92f, floorTone * 0.82f,
                 garage ? Atlas.CONCRETE : Atlas.CONCRETE, 0.5f, 0.5f);
         // ceiling
         mb.flatQuad(-hx, -hz, hx, hz, h, 0.72f, 0.71f, 0.68f, Atlas.CONCRETE, 0.4f, 0.4f);
-        float wr = garage ? 0.66f : 0.80f, wg = garage ? 0.66f : 0.75f, wb = garage ? 0.64f : 0.66f;
+        float wr = (garage ? 0.66f : 0.80f) + variance;
+        float wg = (garage ? 0.66f : 0.75f) + variance;
+        float wb = (garage ? 0.64f : 0.66f) + variance;
         // walls (door gap in the +Z south wall)
         mb.wallQuad(-hx, 0, -hz, hx, 0, -hz, h, 0, 0, -1, wr, wg, wb, Atlas.CONCRETE, 0.35f);
         mb.wallQuad(-hx, 0, -hz, -hx, 0, hz, h, -1, 0, 0, wr, wg, wb, Atlas.CONCRETE, 0.35f);
@@ -743,16 +757,23 @@ public final class World implements PoliceSystem.PoliceHost {
     }
 
     public boolean enterProperty(Content.Place place) {
-        if (place == null || interiorCooldown > 0) {
+        if (place == null || interiorCooldown > 0 || interior != null) {
             return false;
         }
         boolean garage = place.kind == Content.Kind.GARAGE;
-        Mesh mesh = garage ? garageMesh : homeMesh;
+        long seed = ((long) place.id.hashCode() << 32) ^ Float.floatToIntBits(place.x)
+                ^ ((long) Float.floatToIntBits(place.z) << 17);
+        java.util.Random rnd = new java.util.Random(seed);
+        float hx = (garage ? 5.4f : 5.0f) + rnd.nextFloat() * 0.8f;
+        float hz = (garage ? 4.3f : 4.0f) + rnd.nextFloat() * 0.6f;
+        MeshBuilder builder = new MeshBuilder();
+        room(builder, garage, hx, hz, seed);
+        Mesh mesh = Meshes.from(builder);
         if (mesh == null) {
             return false;
         }
         interior = new Interior(place, place.x, place.z, map.heightAt(place.x, place.z) + 0.05f,
-                garage, mesh);
+                garage, mesh, hx, hz);
         Player p = player();
         exitVehicleIfAny(p, true);
         p.indoor = true;
@@ -778,7 +799,7 @@ public final class World implements PoliceSystem.PoliceHost {
         audio.setIndoors(true);
         audio.setTrack(AudioEngine.NIGHT);
         notification = garage ? "Garage · interagisci sul ponte per prendere un veicolo"
-                : "Casa · interagisci sul letto per salvare";
+                : "Interno visitabile · esci dalla porta per tornare in città";
         notificationTimer = 4f;
         return true;
     }
@@ -793,6 +814,7 @@ public final class World implements PoliceSystem.PoliceHost {
         p.indoor = false;
         p.setPosition(ox, oz, map);
         p.heading = (float) Math.PI;
+        interior.dispose();
         interior = null;
         interiorCooldown = 0.6f;
         audio.setIndoors(false);
@@ -804,6 +826,13 @@ public final class World implements PoliceSystem.PoliceHost {
 
     public Interior interior() {
         return interior;
+    }
+
+    private void disposeInterior() {
+        if (interior != null) {
+            interior.dispose();
+            interior = null;
+        }
     }
 
     private void spawnOwnedVehicleOutside() {
@@ -1098,7 +1127,7 @@ public final class World implements PoliceSystem.PoliceHost {
         playTime = d.playTime;
         active = MathUtils.clamp(d.character, 0, 1);
         Player p = player();
-        interior = null;
+        disposeInterior();
         audio.setIndoors(false);
         for (Player pl : players) {
             pl.indoor = false;
@@ -1200,7 +1229,7 @@ public final class World implements PoliceSystem.PoliceHost {
         traffic.clear();
         targets.clear();
         tempVehicles.clear();
-        interior = null;
+        disposeInterior();
         for (Player pl : players) {
             pl.indoor = false;
             pl.vehicle = null;
@@ -1226,11 +1255,6 @@ public final class World implements PoliceSystem.PoliceHost {
             h.dispose();
         }
         vehicles.dispose();
-        if (homeMesh != null) {
-            homeMesh.dispose();
-        }
-        if (garageMesh != null) {
-            garageMesh.dispose();
-        }
+        disposeInterior();
     }
 }

@@ -1,27 +1,45 @@
 package it.pta.world;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * Immutable, spatial-indexed world geometry baked from OpenStreetMap data.
+ * Spatial-indexed world geometry baked from OpenStreetMap data.
  *
- * File format is produced by tools/map/build_map.py and documented in
- * docs/MAP_PIPELINE.md. Everything is stored in flat primitive arrays and bucketed
- * by 512 m chunks so the Android renderer can stream the world without holding a
- * mesh for the whole province.
+ * <p>The complete map stays in the application's internal storage. This class keeps
+ * only a small spatial index in RAM (record offsets and chunk buckets); building,
+ * road and area geometry is decoded on demand and kept in bounded caches. That is
+ * what makes all 71.844 buildings, 26.296 road ways, 4.785 areas and 2.321 POIs
+ * available without holding the whole province in the Java heap.</p>
+ *
+ * <p>File format is produced by tools/map/build_map.py. A chunk is 512 m; roads and
+ * areas that cross a chunk boundary are listed in every intersecting chunk, but the
+ * record itself exists once in the file. Rendering clips them to the chunk.</p>
  */
 public final class MapData {
     public static final int MAGIC = 0x5041544D; // "PTAM"
 
+    private static final int MAX_BUILDING_CHUNKS = 16;
+    private static final int MAX_CACHED_ROADS = 1024;
+    private static final int MAX_CACHED_AREAS = 512;
+
     public final float minX, minZ, maxX, maxZ;
     public final float chunkSize;
-    public final Building[] buildings;
-    public final RoadWay[] roads;
-    public final Area[] areas;
+    public final int buildingCount, roadCount, areaCount, poiCount, nameCount;
     public final Poi[] pois;
     public final String[] names;
 
@@ -31,6 +49,12 @@ public final class MapData {
     private final short[] dem;
 
     public final int minCX, minCZ, nCX, nCZ;
+
+    private final ByteBuffer data;
+    private final int[] buildingOffset;
+    private final int[] roadOffset;
+    private final int[] areaOffset;
+    private final int[] buildingOwner; // chunk key, -1 if outside the index
     private final int[] buildingStart;
     private final int[] buildingItems;
     private final int[] roadStart;
@@ -40,71 +64,215 @@ public final class MapData {
     private final int[] poiStart;
     private final int[] poiItems;
 
-    private MapData(Builder b) {
-        this.minX = b.minX;
-        this.minZ = b.minZ;
-        this.maxX = b.maxX;
-        this.maxZ = b.maxZ;
-        this.chunkSize = b.chunkSize;
-        this.buildings = b.buildings.toArray(new Building[0]);
-        this.roads = b.roads.toArray(new RoadWay[0]);
-        this.areas = b.areas.toArray(new Area[0]);
-        this.pois = b.pois.toArray(new Poi[0]);
-        this.names = b.names.toArray(new String[0]);
-        this.demCols = b.demCols;
-        this.demRows = b.demRows;
-        this.demMinX = b.demMinX;
-        this.demMinZ = b.demMinZ;
-        this.demStep = b.demStep;
-        this.dem = b.dem;
+    private final LinkedHashMap<Long, BuildingChunk> buildingChunks =
+            new LinkedHashMap<Long, BuildingChunk>(24, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Long, BuildingChunk> eldest) {
+                    return size() > MAX_BUILDING_CHUNKS;
+                }
+            };
+    private final LinkedHashMap<Integer, RoadWay> roadCache =
+            new LinkedHashMap<Integer, RoadWay>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Integer, RoadWay> eldest) {
+                    return size() > MAX_CACHED_ROADS;
+                }
+            };
+    private final LinkedHashMap<Integer, Area> areaCache =
+            new LinkedHashMap<Integer, Area>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Integer, Area> eldest) {
+                    return size() > MAX_CACHED_AREAS;
+                }
+            };
+
+    private static final class BuildingChunk {
+        final long key;
+        final Map<Integer, Building> objects;
+
+        BuildingChunk(long key, Map<Integer, Building> objects) {
+            this.key = key;
+            this.objects = objects;
+        }
+    }
+
+    private MapData(ByteBuffer bytes) {
+        this.data = bytes.order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer b = data;
+
+        byte[] magic = new byte[8];
+        b.get(magic);
+        if (magic[0] != 'P' || magic[1] != 'T' || magic[2] != 'A' || magic[3] != 'M') {
+            throw new IllegalArgumentException("not a PTA map file");
+        }
+        int version = b.getInt();
+        if (version != 2) {
+            throw new IllegalArgumentException("unsupported PTA map version " + version);
+        }
+        b.getFloat(); // lat0
+        b.getFloat(); // lon0
+        this.minX = b.getFloat();
+        this.minZ = b.getFloat();
+        this.maxX = b.getFloat();
+        this.maxZ = b.getFloat();
+        this.chunkSize = b.getFloat();
+        this.buildingCount = b.getInt();
+        this.roadCount = b.getInt();
+        this.areaCount = b.getInt();
+        this.poiCount = b.getInt();
+        this.nameCount = b.getInt();
+        b.getFloat(); // metres per degree latitude
+        b.getFloat(); // metres per degree longitude
+        this.demCols = b.getInt();
+        this.demRows = b.getInt();
+        this.demMinX = b.getFloat();
+        this.demMinZ = b.getFloat();
+        this.demStep = b.getFloat();
+        this.dem = new short[demCols * demRows];
+        for (int i = 0; i < dem.length; i++) {
+            dem[i] = b.getShort();
+        }
+
+        this.names = new String[nameCount];
+        for (int i = 0; i < nameCount; i++) {
+            int len = b.getShort() & 0xFFFF;
+            byte[] nb = new byte[len];
+            b.get(nb);
+            names[i] = new String(nb, StandardCharsets.UTF_8);
+        }
 
         this.minCX = (int) Math.floor(minX / chunkSize);
         this.minCZ = (int) Math.floor(minZ / chunkSize);
         this.nCX = (int) Math.floor(maxX / chunkSize) - minCX + 1;
         this.nCZ = (int) Math.floor(maxZ / chunkSize) - minCZ + 1;
 
+        buildingOffset = new int[buildingCount];
+        roadOffset = new int[roadCount];
+        areaOffset = new int[areaCount];
+        buildingOwner = new int[buildingCount];
+        Arrays.fill(buildingOwner, -1);
+
         Buckets bb = new Buckets(nCX * nCZ, minCX, minCZ, nCX);
-        for (int i = 0; i < buildings.length; i++) {
-            Building bd = buildings[i];
-            bb.add(cx(bd.cx), cz(bd.cz), i);
+        for (int i = 0; i < buildingCount; i++) {
+            int start = b.position();
+            buildingOffset[i] = start;
+            b.get(); // has name flag
+            int nv = b.get() & 0xFF;
+            b.getFloat(); // height
+            b.get(); // facade
+            b.get(); // roof
+            b.getShort(); // reserved
+            b.getInt(); // name index
+            float sx = 0, sz = 0;
+            float mnx = Float.MAX_VALUE, mnz = Float.MAX_VALUE;
+            float mxx = -Float.MAX_VALUE, mxz = -Float.MAX_VALUE;
+            for (int v = 0; v < nv; v++) {
+                float x = b.getFloat();
+                float z = b.getFloat();
+                sx += x;
+                sz += z;
+                mnx = Math.min(mnx, x);
+                mxx = Math.max(mxx, x);
+                mnz = Math.min(mnz, z);
+                mxz = Math.max(mxz, z);
+            }
+            if (nv > 0) {
+                int k = key(cx(sx / nv), cz(sz / nv));
+                buildingOwner[i] = k;
+                bb.add(cx(sx / nv), cz(sz / nv), i);
+            }
         }
         bb.build();
         buildingStart = bb.start;
         buildingItems = bb.items;
 
         Buckets rb = new Buckets(nCX * nCZ, minCX, minCZ, nCX);
-        for (int i = 0; i < roads.length; i++) {
-            RoadWay r = roads[i];
-            markBox(rb, i, r.minX, r.minZ, r.maxX, r.maxZ);
+        for (int i = 0; i < roadCount; i++) {
+            int start = b.position();
+            roadOffset[i] = start;
+            b.getInt(); // OSM id
+            b.get(); // class
+            b.get(); // flags
+            b.get(); // lanes
+            b.get(); // drivable
+            b.getFloat(); // width
+            b.getInt(); // name index
+            int np = b.getShort() & 0xFFFF;
+            float mnx = Float.MAX_VALUE, mnz = Float.MAX_VALUE;
+            float mxx = -Float.MAX_VALUE, mxz = -Float.MAX_VALUE;
+            for (int p = 0; p < np; p++) {
+                float x = b.getFloat();
+                float z = b.getFloat();
+                mnx = Math.min(mnx, x);
+                mxx = Math.max(mxx, x);
+                mnz = Math.min(mnz, z);
+                mxz = Math.max(mxz, z);
+            }
+            if (np > 0) {
+                markBox(rb, i, mnx, mnz, mxx, mxz);
+            }
         }
         rb.build();
         roadStart = rb.start;
         roadItems = rb.items;
 
         Buckets ab = new Buckets(nCX * nCZ, minCX, minCZ, nCX);
-        for (int i = 0; i < areas.length; i++) {
-            Area a = areas[i];
-            markBox(ab, i, a.minX, a.minZ, a.maxX, a.maxZ);
+        for (int i = 0; i < areaCount; i++) {
+            int start = b.position();
+            areaOffset[i] = start;
+            b.get(); // kind
+            b.getInt(); // name index
+            int np = b.getShort() & 0xFFFF;
+            float mnx = Float.MAX_VALUE, mnz = Float.MAX_VALUE;
+            float mxx = -Float.MAX_VALUE, mxz = -Float.MAX_VALUE;
+            for (int p = 0; p < np; p++) {
+                float x = b.getFloat();
+                float z = b.getFloat();
+                mnx = Math.min(mnx, x);
+                mxx = Math.max(mxx, x);
+                mnz = Math.min(mnz, z);
+                mxz = Math.max(mxz, z);
+            }
+            if (np > 0) {
+                markBox(ab, i, mnx, mnz, mxx, mxz);
+            }
         }
         ab.build();
         areaStart = ab.start;
         areaItems = ab.items;
 
         Buckets pb = new Buckets(nCX * nCZ, minCX, minCZ, nCX);
-        for (int i = 0; i < pois.length; i++) {
-            Poi p = pois[i];
-            pb.add(cx(p.x), cz(p.z), i);
+        this.pois = new Poi[poiCount];
+        for (int i = 0; i < poiCount; i++) {
+            float x = b.getFloat();
+            float z = b.getFloat();
+            int cat = b.get() & 0xFF;
+            int nameIdx = b.getInt();
+            Poi p = new Poi(x, z, cat, nameIdx);
+            pois[i] = p;
+            pb.add(cx(x), cz(z), i);
         }
         pb.build();
         poiStart = pb.start;
         poiItems = pb.items;
+
+        verifyCounts();
     }
 
-    private void markBox(Buckets b, int idx, float x0, float z0, float x1, float z1) {
+    private int key(int cx, int cz) {
+        int col = cx - minCX;
+        int row = cz - minCZ;
+        if (col < 0 || row < 0 || col >= nCX || row >= nCZ) {
+            return -1;
+        }
+        return row * nCX + col;
+    }
+
+    private void markBox(Buckets buckets, int idx, float x0, float z0, float x1, float z1) {
         int c0 = cx(x0), c1 = cx(x1), r0 = cz(z0), r1 = cz(z1);
         for (int r = r0; r <= r1; r++) {
             for (int c = c0; c <= c1; c++) {
-                b.add(c, r, idx);
+                buckets.add(c, r, idx);
             }
         }
     }
@@ -123,15 +291,6 @@ public final class MapData {
 
     public float chunkOriginZ(int cz) {
         return cz * chunkSize;
-    }
-
-    private int key(int cx, int cz) {
-        int col = cx - minCX;
-        int row = cz - minCZ;
-        if (col < 0 || row < 0 || col >= nCX || row >= nCZ) {
-            return -1;
-        }
-        return row * nCX + col;
     }
 
     public int[] buildingsIn(int cx, int cz) {
@@ -170,6 +329,166 @@ public final class MapData {
         return names[idx];
     }
 
+    // ------------------------------------------------------------ on-demand data
+
+    /**
+     * Returns a building by global record index. Buildings are grouped by their centre
+     * chunk, so a request only decodes the buildings of that 512 m chunk. At most
+     * {@link #MAX_BUILDING_CHUNKS} chunks are retained in RAM.
+     */
+    public Building building(int idx) {
+        if (idx < 0 || idx >= buildingCount) {
+            throw new IndexOutOfBoundsException("building " + idx);
+        }
+        synchronized (buildingChunks) {
+            int owner = buildingOwner[idx];
+            if (owner < 0) {
+                return readBuilding(idx);
+            }
+            BuildingChunk chunk = buildingChunks.get((long) owner);
+            if (chunk == null) {
+                chunk = loadBuildingChunk(owner);
+                buildingChunks.put((long) owner, chunk);
+            }
+            Building b = chunk.objects.get(idx);
+            return b != null ? b : readBuilding(idx);
+        }
+    }
+
+    private BuildingChunk loadBuildingChunk(long owner) {
+        int cell = (int) owner;
+        int row = nCX > 0 ? cell / nCX : 0;
+        int col = nCX > 0 ? cell % nCX : 0;
+        int cx = minCX + col;
+        int cz = minCZ + row;
+        int[] ids = buildingsIn(cx, cz);
+        Map<Integer, Building> map = new HashMap<>(Math.max(8, ids.length * 2));
+        for (int id : ids) {
+            map.put(id, readBuilding(id));
+        }
+        return new BuildingChunk(owner, map);
+    }
+
+    public RoadWay road(int idx) {
+        if (idx < 0 || idx >= roadCount) {
+            throw new IndexOutOfBoundsException("road " + idx);
+        }
+        synchronized (roadCache) {
+            RoadWay r = roadCache.get(idx);
+            if (r == null) {
+                r = readRoad(idx);
+                roadCache.put(idx, r);
+            }
+            return r;
+        }
+    }
+
+    public Area area(int idx) {
+        if (idx < 0 || idx >= areaCount) {
+            throw new IndexOutOfBoundsException("area " + idx);
+        }
+        synchronized (areaCache) {
+            Area a = areaCache.get(idx);
+            if (a == null) {
+                a = readArea(idx);
+                areaCache.put(idx, a);
+            }
+            return a;
+        }
+    }
+
+    public Poi poi(int idx) {
+        return pois[idx];
+    }
+
+    private ByteBuffer at(int offset) {
+        ByteBuffer b = data.duplicate().order(ByteOrder.LITTLE_ENDIAN);
+        b.position(offset);
+        return b;
+    }
+
+    private Building readBuilding(int idx) {
+        ByteBuffer b = at(buildingOffset[idx]);
+        b.get();
+        int nv = b.get() & 0xFF;
+        float h = b.getFloat();
+        int fac = b.get() & 0xFF;
+        int roof = b.get() & 0xFF;
+        b.getShort();
+        int nameIdx = b.getInt();
+        float[] pts = new float[nv * 2];
+        for (int v = 0; v < nv; v++) {
+            pts[v * 2] = b.getFloat();
+            pts[v * 2 + 1] = b.getFloat();
+        }
+        return new Building(pts, h, fac, roof, nameIdx);
+    }
+
+    private RoadWay readRoad(int idx) {
+        ByteBuffer b = at(roadOffset[idx]);
+        int id = b.getInt();
+        int cls = b.get() & 0xFF;
+        int flags = b.get() & 0xFF;
+        int lanes = b.get() & 0xFF;
+        boolean drivable = b.get() != 0;
+        float width = b.getFloat();
+        int nameIdx = b.getInt();
+        int np = b.getShort() & 0xFFFF;
+        float[] pts = new float[np * 2];
+        for (int p = 0; p < np; p++) {
+            pts[p * 2] = b.getFloat();
+            pts[p * 2 + 1] = b.getFloat();
+        }
+        return new RoadWay(id, cls, flags, lanes, drivable, width, nameIdx, pts);
+    }
+
+    private Area readArea(int idx) {
+        ByteBuffer b = at(areaOffset[idx]);
+        int kind = b.get() & 0xFF;
+        int nameIdx = b.getInt();
+        int np = b.getShort() & 0xFFFF;
+        float[] pts = new float[np * 2];
+        for (int p = 0; p < np; p++) {
+            pts[p * 2] = b.getFloat();
+            pts[p * 2 + 1] = b.getFloat();
+        }
+        return new Area(kind, nameIdx, pts);
+    }
+
+    /** Releases the geometry of a chunk that left the streaming radius. */
+    public void releaseChunk(int cx, int cz) {
+        synchronized (buildingChunks) {
+            buildingChunks.remove((long) key(cx, cz));
+        }
+    }
+
+    public void releaseAllChunks() {
+        synchronized (buildingChunks) {
+            buildingChunks.clear();
+        }
+        synchronized (roadCache) {
+            roadCache.clear();
+        }
+        synchronized (areaCache) {
+            areaCache.clear();
+        }
+    }
+
+    /** Diagnostic: number of building chunks currently decoded in RAM. */
+    public int cachedBuildingChunks() {
+        synchronized (buildingChunks) {
+            return buildingChunks.size();
+        }
+    }
+
+    public int cachedRoads() {
+        synchronized (roadCache) {
+            return roadCache.size();
+        }
+    }
+
+    // --------------------------------------------------------------- map queries
+
     /** Closest point on road network to (x,z), searching a local 3x3 chunk window. */
     public RoadHit nearestRoad(float x, float z, boolean drivableOnly, float maxDist) {
         int c = cx(x), r = cz(z);
@@ -179,7 +498,7 @@ public final class MapData {
         for (int rr = r - 1; rr <= r + 1; rr++) {
             for (int cc = c - 1; cc <= c + 1; cc++) {
                 for (int idx : roadsIn(cc, rr)) {
-                    RoadWay w = roads[idx];
+                    RoadWay w = road(idx);
                     if (drivableOnly && !w.drivable) {
                         continue;
                     }
@@ -243,7 +562,7 @@ public final class MapData {
         for (int rr = r - 1; rr <= r + 1; rr++) {
             for (int cc = c - 1; cc <= c + 1; cc++) {
                 for (int idx : buildingsIn(cc, rr)) {
-                    Building b = buildings[idx];
+                    Building b = building(idx);
                     if (!b.collides) {
                         continue;
                     }
@@ -267,7 +586,7 @@ public final class MapData {
         for (int rr = r - 1; rr <= r + 1; rr++) {
             for (int cc = c - 1; cc <= c + 1; cc++) {
                 for (int idx : buildingsIn(cc, rr)) {
-                    Building b = buildings[idx];
+                    Building b = building(idx);
                     if (!b.collides) {
                         continue;
                     }
@@ -301,7 +620,7 @@ public final class MapData {
         Area best = null;
         int bestRank = -1;
         for (int idx : areasIn(c, r)) {
-            Area a = areas[idx];
+            Area a = area(idx);
             if (x < a.minX || x > a.maxX || z < a.minZ || z > a.maxZ) {
                 continue;
             }
@@ -315,6 +634,53 @@ public final class MapData {
             }
         }
         return best;
+    }
+
+    /**
+     * Iterates road segments in a rectangle without ever building a global road list.
+     * Used by the minimap and the province map, which only need a few hundred segments.
+     */
+    public int forEachRoadSegment(float minX, float minZ, float maxX, float maxZ,
+                                  RoadSegmentConsumer consumer, int maxSegments) {
+        int c0 = cx(minX), c1 = cx(maxX), r0 = cz(minZ), r1 = cz(maxZ);
+        Set<Integer> seen = new HashSet<>();
+        int count = 0;
+        for (int r = r0; r <= r1; r++) {
+            for (int c = c0; c <= c1; c++) {
+                for (int idx : roadsIn(c, r)) {
+                    if (!seen.add(idx)) {
+                        continue;
+                    }
+                    RoadWay road = road(idx);
+                    if (road.maxX < minX || road.minX > maxX
+                            || road.maxZ < minZ || road.minZ > maxZ) {
+                        continue;
+                    }
+                    float[] pts = road.pts;
+                    for (int i = 0; i + 3 < pts.length; i += 2) {
+                        float x0 = pts[i], z0 = pts[i + 1];
+                        float x1 = pts[i + 2], z1 = pts[i + 3];
+                        if (Math.max(x0, x1) < minX || Math.min(x0, x1) > maxX
+                                || Math.max(z0, z1) < minZ || Math.min(z0, z1) > maxZ) {
+                            continue;
+                        }
+                        if (!consumer.segment(x0, z0, x1, z1, road.drivable)) {
+                            return count;
+                        }
+                        count++;
+                        if (count >= maxSegments) {
+                            return count;
+                        }
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+    public interface RoadSegmentConsumer {
+        /** Return false to stop iterating. */
+        boolean segment(float x0, float z0, float x1, float z1, boolean drivable);
     }
 
     // ---------------------------------------------------------------- data model
@@ -548,7 +914,7 @@ public final class MapData {
         int[] items;
 
         Buckets(int size, int minCX, int minCZ, int nCX) {
-            this.nCells = size;
+            this.nCells = Math.max(0, size);
             this.minCX = minCX;
             this.minCZ = minCZ;
             this.nCX = nCX;
@@ -571,8 +937,8 @@ public final class MapData {
             }
             if (n == keys.length) {
                 int cap = keys.length * 2;
-                keys = java.util.Arrays.copyOf(keys, cap);
-                vals = java.util.Arrays.copyOf(vals, cap);
+                keys = Arrays.copyOf(keys, cap);
+                vals = Arrays.copyOf(vals, cap);
             }
             keys[n] = k;
             vals[n] = idx;
@@ -580,7 +946,7 @@ public final class MapData {
         }
 
         void build() {
-            int[] count = new int[nCells];
+            int[] count = new int[Math.max(1, nCells)];
             for (int i = 0; i < n; i++) {
                 count[keys[i]]++;
             }
@@ -592,7 +958,7 @@ public final class MapData {
             }
             start[nCells] = acc;
             items = new int[acc];
-            int[] cursor = new int[nCells];
+            int[] cursor = new int[Math.max(1, nCells)];
             System.arraycopy(start, 0, cursor, 0, nCells);
             for (int i = 0; i < n; i++) {
                 int k = keys[i];
@@ -603,98 +969,44 @@ public final class MapData {
 
     // ------------------------------------------------------------------- loading
 
-    public static MapData load(byte[] bytes) {
-        ByteBuffer bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
-        byte[] magic = new byte[8];
-        bb.get(magic);
-        if (magic[0] != 'P' || magic[1] != 'T' || magic[2] != 'A' || magic[3] != 'M') {
-            throw new IllegalArgumentException("not a PTA map file");
+    /**
+     * Opens the full map from storage. The file is mapped read-only; the operating
+     * system keeps the complete data on disk while only touched pages are resident.
+     */
+    public static MapData open(File file) {
+        try (FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.READ)) {
+            long size = channel.size();
+            if (size <= 0 || size > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException("invalid map size " + size);
+            }
+            MappedByteBuffer mapped = channel.map(FileChannel.MapMode.READ_ONLY, 0, size);
+            return new MapData(mapped);
+        } catch (IOException e) {
+            throw new IllegalStateException("cannot open map " + file, e);
         }
-        int version = bb.getInt();
-        if (version != 2) {
-            throw new IllegalArgumentException("unsupported PTA map version " + version);
-        }
-        Builder b = new Builder();
-        bb.getFloat(); // lat0
-        bb.getFloat(); // lon0
-        b.minX = bb.getFloat();
-        b.minZ = bb.getFloat();
-        b.maxX = bb.getFloat();
-        b.maxZ = bb.getFloat();
-        b.chunkSize = bb.getFloat();
-        int nBuild = bb.getInt();
-        int nRoad = bb.getInt();
-        int nArea = bb.getInt();
-        int nPoi = bb.getInt();
-        int nNames = bb.getInt();
-        bb.getFloat();
-        bb.getFloat();
-        b.demCols = bb.getInt();
-        b.demRows = bb.getInt();
-        b.demMinX = bb.getFloat();
-        b.demMinZ = bb.getFloat();
-        b.demStep = bb.getFloat();
-        b.dem = new short[b.demCols * b.demRows];
-        for (int i = 0; i < b.dem.length; i++) {
-            b.dem[i] = bb.getShort();
-        }
+    }
 
-        for (int i = 0; i < nNames; i++) {
-            int len = bb.getShort() & 0xFFFF;
-            byte[] nb = new byte[len];
-            bb.get(nb);
-            b.names.add(new String(nb, StandardCharsets.UTF_8));
+    /** Test/JVM helper. Production uses {@link #open(File)} so the heap is not filled. */
+    public static MapData load(byte[] bytes) {
+        return new MapData(ByteBuffer.wrap(bytes));
+    }
+
+    public void verifyCounts() {
+        if (buildingOffset.length != buildingCount) {
+            throw new IllegalStateException("building count mismatch: " + buildingOffset.length + " / " + buildingCount);
         }
-        for (int i = 0; i < nBuild; i++) {
-            bb.get(); // hasName flag
-            int nv = bb.get() & 0xFF;
-            float h = bb.getFloat();
-            int fac = bb.get() & 0xFF;
-            int roof = bb.get() & 0xFF;
-            bb.getShort();
-            int nameIdx = bb.getInt();
-            float[] pts = new float[nv * 2];
-            for (int v = 0; v < nv; v++) {
-                pts[v * 2] = bb.getFloat();
-                pts[v * 2 + 1] = bb.getFloat();
-            }
-            b.buildings.add(new Building(pts, h, fac, roof, nameIdx));
+        if (roadOffset.length != roadCount) {
+            throw new IllegalStateException("road count mismatch: " + roadOffset.length + " / " + roadCount);
         }
-        for (int i = 0; i < nRoad; i++) {
-            int id = bb.getInt();
-            int cls = bb.get() & 0xFF;
-            int flags = bb.get() & 0xFF;
-            int lanes = bb.get() & 0xFF;
-            boolean drivable = bb.get() != 0;
-            float width = bb.getFloat();
-            int nameIdx = bb.getInt();
-            int np = bb.getShort() & 0xFFFF;
-            float[] pts = new float[np * 2];
-            for (int p = 0; p < np; p++) {
-                pts[p * 2] = bb.getFloat();
-                pts[p * 2 + 1] = bb.getFloat();
-            }
-            b.roads.add(new RoadWay(id, cls, flags, lanes, drivable, width, nameIdx, pts));
+        if (areaOffset.length != areaCount) {
+            throw new IllegalStateException("area count mismatch: " + areaOffset.length + " / " + areaCount);
         }
-        for (int i = 0; i < nArea; i++) {
-            int kind = bb.get() & 0xFF;
-            int nameIdx = bb.getInt();
-            int np = bb.getShort() & 0xFFFF;
-            float[] pts = new float[np * 2];
-            for (int p = 0; p < np; p++) {
-                pts[p * 2] = bb.getFloat();
-                pts[p * 2 + 1] = bb.getFloat();
-            }
-            b.areas.add(new Area(kind, nameIdx, pts));
+        if (pois.length != poiCount) {
+            throw new IllegalStateException("poi count mismatch: " + pois.length + " / " + poiCount);
         }
-        for (int i = 0; i < nPoi; i++) {
-            float x = bb.getFloat();
-            float z = bb.getFloat();
-            int cat = bb.get() & 0xFF;
-            int nameIdx = bb.getInt();
-            b.pois.add(new Poi(x, z, cat, nameIdx));
+        if (names.length != nameCount) {
+            throw new IllegalStateException("name count mismatch: " + names.length + " / " + nameCount);
         }
-        return new MapData(b);
     }
 
     /** Bilinear terrain height at a world position (metres above sea level). */
@@ -717,18 +1029,6 @@ public final class MapData {
         float a = h00 + (h10 - h00) * tx;
         float b = h01 + (h11 - h01) * tx;
         return a + (b - a) * tz;
-    }
-
-    private static final class Builder {
-        float minX, minZ, maxX, maxZ, chunkSize;
-        int demCols, demRows;
-        float demMinX, demMinZ, demStep;
-        short[] dem;
-        final List<Building> buildings = new ArrayList<>();
-        final List<RoadWay> roads = new ArrayList<>();
-        final List<Area> areas = new ArrayList<>();
-        final List<Poi> pois = new ArrayList<>();
-        final List<String> names = new ArrayList<>();
     }
 
     public Poi[] nearbyPois(float x, float z, float radius, int... cats) {
