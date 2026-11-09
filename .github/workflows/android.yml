@@ -73,16 +73,16 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          VERSION="1.0.2"
+          VERSION="1.0.3"
           TAG="v${VERSION}"
           APK="PTA-${VERSION}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
-          NOTES="Mondo OSM completo: 71.844 edifici, 26.296 strade, 4.785 aree, 2.321 POI, 70 interni visitabili. Il file integro resta nello storage interno; la RAM conserva solo indice e chunk vicini, con cache limitata e scaricamento dei chunk lontani. LOD 1/2 mantiene ogni edificio. APK debug installabile: arm64-v8a, armeabi-v7a, x86_64."
+          NOTES="Mondo OSM completo: 71.844 edifici, 26.296 strade, 4.785 aree, 2.321 POI, 70 interni visitabili. Streaming a chunk con cache limitata; LOD 1/2 mantiene ogni edificio. Correzione del mondo nero, spawn e camera nella Piazza del Duomo, fallback texture/illuminazione e camera anti-muro verificati su emulatore Android x86_64. APK debug installabile: arm64-v8a, armeabi-v7a, x86_64."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber
           else
             gh release create "$TAG" "$APK" \
-              --title "PTA 1.0.2 - mondo OSM completo" \
+              --title "PTA 1.0.3 - mondo di Pistoia verificato" \
               --target "$GITHUB_SHA" \
               --notes "$NOTES"
           fi

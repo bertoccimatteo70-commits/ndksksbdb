@@ -43,6 +43,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     private float offerTimer;
     private float perfTime;
     private int perfFrames;
+    private int debugFrames;
     private boolean perfWarned;
     private boolean campaignFinished;
     private Throwable fatal;
@@ -172,6 +173,15 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
             world.render(rig);
         }
         renderer.finishFrame(rig.camera);
+        if (mode == Mode.PLAY && debugFrames < 6) {
+            debugFrames++;
+            Gdx.app.log("PTA", "render: triangles=" + renderer.lastTriangles
+                    + " drawnChunks=" + renderer.lastDrawnChunks
+                    + " loadedChunks=" + renderer.chunkManager().loadedChunks()
+                    + " sun=" + renderer.sun.hours
+                    + " camera=" + rig.camera.position
+                    + " cameraBlocked=" + map.blocked(rig.camera.position.x, rig.camera.position.z, 0.4f));
+        }
     }
 
     private void enterMenu() {
@@ -391,6 +401,8 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         campaignFinished = false;
         offerTimer = 0;
         rig.setFirstPerson(settings.firstPersonDefault);
+        rig.yaw = world.spawnHeading;
+        rig.pitch = 0.24f;
         ui.showGameplay();
         audio.setTrack(AudioEngine.EXPLORE);
         MissionSystem.Mission first = world.missions.nextMainMission();
@@ -402,7 +414,9 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         Gdx.app.log("PTA", "new game: player=" + p.x + "," + p.y + "," + p.z
                 + " ground=" + map.heightAt(p.x, p.z)
                 + " blocked=" + map.blocked(p.x, p.z, 0.55f)
+                + " yaw=" + rig.yaw
                 + " camera=" + rig.camera.position
+                + " cameraBlocked=" + map.blocked(rig.camera.position.x, rig.camera.position.z, 0.4f)
                 + " chunks=" + renderer.chunkManager().loadedChunks());
     }
 

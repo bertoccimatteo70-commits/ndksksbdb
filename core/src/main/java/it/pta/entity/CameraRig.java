@@ -70,15 +70,21 @@ public final class CameraRig {
         float cy = MathUtils.sin(p) * dist;
         float horiz = MathUtils.cos(p) * dist;
         offset.set(-MathUtils.sin(yaw) * horiz, cy, MathUtils.cos(yaw) * horiz);
-        // keep the boom out of buildings
+        // Keep the boom out of buildings. If every shortened position is blocked,
+        // lift the camera above the player instead of leaving it inside a facade.
         if (map != null) {
-            for (float t = 1f; t >= 0.25f; t -= 0.12f) {
+            boolean found = false;
+            for (float t = 1f; t >= 0.12f; t -= 0.11f) {
                 float px = target.x + offset.x * t;
                 float pz = target.z + offset.z * t;
                 if (!map.blocked(px, pz, 0.4f)) {
                     offset.scl(t);
+                    found = true;
                     break;
                 }
+            }
+            if (!found) {
+                offset.set(0f, 1.8f, 0f);
             }
         }
         camera.position.set(target.x + offset.x, target.y + offset.y, target.z + offset.z);

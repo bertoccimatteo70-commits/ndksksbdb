@@ -9,6 +9,12 @@ Motore: **libGDX 1.12.1 + renderer OpenGL ES 2.0 proprietario** (Java 17).
 Nessun asset di terze parti, nessun marchio, nessuna musica protetta: texture, modelli,
 personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 
+> **Release corrente:** [PTA 1.0.3 — mondo di Pistoia verificato](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/tag/v1.0.3) · [Scarica PTA-1.0.3.apk](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/download/v1.0.3/PTA-1.0.3.apk) (9,0 MB)
+>
+> La Release 1.0.3 include lo spawn verificato nella Piazza del Duomo, il rendering
+> senza mondo nero e le correzioni di telecamera. APK debug installabile per
+> arm64-v8a, armeabi-v7a e x86_64.
+
 ---
 
 ## Stato del progetto
@@ -30,9 +36,53 @@ personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 | APK installabile e pipeline GitHub Actions | build automatica nel workflow |
 
 Le verifiche automatiche coprono: caricamento della mappa reale, presenza di strade e
-altimetria, contenuto delle missioni, economia, preset e salvataggi. La resa grafica e
-il touch **non sono stati provati su un dispositivo fisico o emulatore** in questo
-ambiente (nessun display/GPU Android): vedi [Limiti noti](#limiti-noti).
+altimetria, contenuto delle missioni, economia, preset e salvataggi. In questa fase la
+build è stata installata e avviata su un emulatore Android x86_64: il mondo è stato
+visualizzato con cielo, piazza, facciate, finestre, torre e HUD, e lo spawn è nella
+Piazza del Duomo con camera libera. Il collaudo su telefono fisico, la guida prolungata
+e le performance reali restano da fare: vedi [Limiti noti](#limiti-noti).
+
+---
+
+## Scheda Android e gestione RAM
+
+### Requisiti
+
+| Voce | Valore |
+|---|---|
+| Versione minima | Android 7.0 (API 24) |
+| Target / compile SDK | Android 14 (API 34) |
+| Architetture APK | arm64-v8a, armeabi-v7a, x86_64 |
+| RAM consigliata | 3 GB, con preset MEDIA |
+| GPU | OpenGL ES 2.0 |
+| Connessione | non richiesta dopo l'installazione |
+| Spazio | APK 9,0 MB; circa 7,7 MB di mappa copiati nello storage interno al primo avvio |
+
+La Release `1.0.3` contiene un **APK debug** firmato con la chiave debug, pensato per
+l'installazione diretta e il collaudo. Per la distribuzione sugli store serve una
+build release firmata.
+
+### Gestione della RAM
+
+La mappa completa non viene caricata come 71.844 oggetti Java.
+
+- Al primo avvio `pta_map.bin` viene copiato **integro** in `world/pta_map.bin` nello
+  storage interno e mappato in sola lettura. Il file originale resta la fonte canonica:
+  nessun edificio, strada, area o POI viene rimosso.
+- In heap restano l'header, i 3.876 nomi, i 2.321 POI e gli offset/indici spaziali;
+  sono metadati compatti. Le geometrie vengono decodificate solo quando un chunk
+  entra nel raggio di streaming.
+- Le cache hanno limiti espliciti: **16 chunk di edifici, 1.024 strade, 512 aree**.
+  Quando un chunk viene scaricato, `releaseChunk()` libera la sua geometria.
+- Con il preset MEDIA la distanza di streaming è **900 m**; i chunk oltre circa
+  1.320 m vengono rimossi. LOD 1 e 2 disegnano **tutti** gli edifici come box
+  semplificati: il livello di dettaglio non elimina elementi.
+- I 70 interni sono **on-demand**: esiste una sola mesh attiva, creata all'ingresso e
+  distrutta all'uscita.
+- Per un dispositivo da 3 GB il default è **MEDIA (720p, 30 FPS, 900 m)**; il preset
+  **BASE (480p, 620 m)** offre più margine. Non è stata eseguita una misura dell'heap
+  su hardware reale: i limiti sono di progetto e sono coperti dai test JVM sulla cache,
+  non da un benchmark su telefono.
 
 ---
 
@@ -210,9 +260,10 @@ python3 tools/branding/make_icons.py
   fanno pathfinding globale); i bersagli delle missioni seguono waypoint.
 - **Multipolygon OSM** complessi non importati; gli edifici sono estrusi dal footprint
   semplificato a 0,55 m.
-- **Verifica su hardware**: test JVM e compilazione APK eseguiti; rendering, touch e
-  performance non sono stati osservati su un dispositivo in questo ambiente. Il primo
-  avvio su telefono è il vero collaudo grafico.
+- **Verifica su hardware**: test JVM, compilazione APK e avvio su emulatore Android
+  x86_64 eseguiti. Il mondo è stato visualizzato nella Piazza del Duomo con spawn e
+  camera liberi; touch prolungato, guida e performance su un telefono fisico restano
+  da collaudare. Il primo avvio su telefono è il vero collaudo grafico e prestazionale.
 - Il gioco è single-player, offline, senza account e senza acquisti in-app.
 
 ---

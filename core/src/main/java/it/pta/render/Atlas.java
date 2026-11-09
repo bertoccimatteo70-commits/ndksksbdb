@@ -41,8 +41,11 @@ public final class Atlas {
         tileFoliage(pm, 1, 2);
         tileGlass(pm, 2, 2);
 
-        Texture tex = new Texture(pm, true);
-        tex.setFilter(TextureFilter.MipMapLinearLinear, TextureFilter.Linear);
+        // The atlas is sampled with fract() tiling. Mipmaps are not needed here,
+        // and an incomplete mip chain would make every world surface sample black
+        // on some GLES drivers, so use a simple complete base-level texture.
+        Texture tex = new Texture(pm);
+        tex.setFilter(TextureFilter.Linear, TextureFilter.Linear);
         tex.setWrap(TextureWrap.ClampToEdge, TextureWrap.ClampToEdge);
         pm.dispose();
         return tex;

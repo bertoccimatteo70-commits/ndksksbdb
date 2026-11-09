@@ -10,6 +10,7 @@ import org.junit.Test;
 import java.io.File;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -101,6 +102,47 @@ public class MapAndContentTest {
         assertTrue("bounded road cache", map.cachedRoads() <= 1024);
         map.releaseAllChunks();
         assertEquals("release", 0, map.cachedBuildingChunks());
+    }
+
+    @Test
+    public void garageSpawnPointIsWalkable() {
+        MapData map = MapData.open(asset("map/pta_map.bin").file());
+        Content.init(map, asset("map/landmarks.json").readString("UTF-8"));
+        Content.Place garage = Content.get("garage");
+        assertNotNull("garage place", garage);
+        MapData.RoadHit hit = map.nearestRoad(garage.x, garage.z, true, 160f);
+        assertNotNull("road near garage", hit);
+        float x = hit.x;
+        float z = hit.z;
+        // This is the same candidate used by World.spawnAtStart. It must not start
+        // inside a building footprint, otherwise the first frame is a black wall.
+        assertTrue("garage spawn must be walkable at " + x + "," + z,
+                !map.blocked(x, z, 0.55f));
+        float h = map.heightAt(x, z);
+        assertTrue("garage spawn height plausible: " + h, h > -20 && h < 300);
+        // Camera position logged by the Android build for the same spawn.
+        assertTrue("garage camera must not be inside a wall",
+                !map.blocked(-242.66412f, -62.891857f, 0.4f));
+        // The initial view must follow the road instead of facing the nearest facade.
+        int seg = hit.segment * 2;
+        float dx = hit.way.pts[seg + 2] - hit.way.pts[seg];
+        float dz = hit.way.pts[seg + 3] - hit.way.pts[seg + 1];
+        float yaw = (float) Math.atan2(dx, -dz);
+        float lookX = hit.x + (float) Math.sin(yaw) * 10f;
+        float lookZ = hit.z - (float) Math.cos(yaw) * 10f;
+        assertTrue("spawn view must follow an open road", !map.blocked(lookX, lookZ, 0.55f));
+    }
+
+    @Test
+    public void openDuomoSpawnHasAReadableView() {
+        MapData map = MapData.open(asset("map/pta_map.bin").file());
+        Content.init(map, asset("map/landmarks.json").readString("UTF-8"));
+        Content.Place duomo = Content.get("duomo");
+        assertNotNull("duomo place", duomo);
+        assertFalse("duomo spawn must be walkable", map.blocked(duomo.x, duomo.z, 0.55f));
+        // The camera starts south of the player and looks north across the piazza.
+        assertFalse("duomo camera must not be inside a facade",
+                map.blocked(duomo.x, duomo.z + 5.05f, 0.4f));
     }
 
     @Test

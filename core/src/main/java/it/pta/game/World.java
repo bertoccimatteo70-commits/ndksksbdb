@@ -73,6 +73,8 @@ public final class World implements PoliceSystem.PoliceHost {
     public float notificationTimer;
     public String prompt = "";
     public boolean busy;
+    /** Direction of the street used for the initial spawn, in camera yaw radians. */
+    public float spawnHeading;
     public Listener listener;
 
     private final Humanoid marco, elisa, policeModel;
@@ -194,27 +196,72 @@ public final class World implements PoliceSystem.PoliceHost {
     }
 
     private void spawnAtStart() {
-        Content.Place garage = Content.get("garage");
-        float gx = garage == null ? 0 : garage.x;
-        float gz = garage == null ? 0 : garage.z;
-        MapData.RoadHit gHit = map.nearestRoad(gx, gz, true, 160f);
+        // Start in the open Piazza del Duomo: it gives a readable first view of the
+        // city instead of spawning in the narrow service lane beside the workshop.
+        // The workshop remains the mission objective and keeps its owned vehicle.
+        Content.Place start = Content.get("duomo");
+        if (start == null) {
+            start = Content.get("garage");
+        }
+        float gx = start == null ? 0 : start.x;
+        float gz = start == null ? 0 : start.z;
+        spawnHeading = 0f;
+        // Only snap to a road when the landmark itself is a street-level point.
+        // A piazza is deliberately left at its real centre.
+        MapData.RoadHit gHit = map.nearestRoad(gx, gz, true, 22f);
         if (gHit != null) {
-            gx = gHit.x + 2.5f;
-            gz = gHit.z + 2.5f;
+            gx = gHit.x;
+            gz = gHit.z;
+            spawnHeading = roadHeading(gHit);
         }
         float[] gSafe = safeSpawn(gx, gz);
         players[0].setPosition(gSafe[0], gSafe[1], map);
+        spawnHeading = clearSpawnHeading(gSafe[0], gSafe[1], spawnHeading);
+        players[0].heading = spawnHeading;
         Content.Place elisaHome = Content.get("casa_elisa");
         float ex = elisaHome == null ? gx : elisaHome.x;
         float ez = elisaHome == null ? gz : elisaHome.z;
         MapData.RoadHit eHit = map.nearestRoad(ex, ez, true, 160f);
         if (eHit != null) {
-            ex = eHit.x - 2.5f;
-            ez = eHit.z + 2.5f;
+            ex = eHit.x;
+            ez = eHit.z;
         }
         float[] eSafe = safeSpawn(ex, ez);
         players[1].setPosition(eSafe[0], eSafe[1], map);
-        players[1].heading = 0.2f;
+        players[1].heading = spawnHeading;
+    }
+
+    /** Pick a cardinal view whose third-person boom is not inside a facade. */
+    private float clearSpawnHeading(float x, float z, float fallback) {
+        float[] candidates = {fallback, 0f, (float) (Math.PI * 0.5),
+                (float) Math.PI, (float) (-Math.PI * 0.5)};
+        float horiz = (float) (Math.cos(0.24f) * 5.2f);
+        for (float yaw : candidates) {
+            float ox = -(float) Math.sin(yaw) * horiz;
+            float oz = (float) Math.cos(yaw) * horiz;
+            if (!map.blocked(x + ox, z + oz, 0.4f)) {
+                return yaw;
+            }
+        }
+        return fallback;
+    }
+
+    /** Direction of the road segment under a spawn point, used as the initial view. */
+    private static float roadHeading(MapData.RoadHit hit) {
+        if (hit == null || hit.way == null) {
+            return 0f;
+        }
+        int i = hit.segment * 2;
+        float[] p = hit.way.pts;
+        if (i < 0 || i + 3 >= p.length) {
+            return 0f;
+        }
+        float dx = p[i + 2] - p[i];
+        float dz = p[i + 3] - p[i + 1];
+        if (Math.hypot(dx, dz) < 0.1f) {
+            return 0f;
+        }
+        return (float) Math.atan2(dx, -dz);
     }
 
     /**

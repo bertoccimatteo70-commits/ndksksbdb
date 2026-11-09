@@ -79,11 +79,12 @@ public final class MeshBuilder {
         float z0 = cz - hz, z1 = cz + hz;
         // top
         flatQuad(x0, z0, x1, z1, y1, r, g, bl, tile, uScale, uScale);
-        // sides
-        wallQuad(x0, y0, z0, x1, y0, z0, y1, 0, 0, -1, r, g, bl, tile, uScale);
-        wallQuad(x1, y0, z0, x1, y0, z1, y1, 1, 0, 0, r, g, bl, tile, uScale);
-        wallQuad(x1, y0, z1, x0, y0, z1, y1, 0, 0, 1, r, g, bl, tile, uScale);
-        wallQuad(x0, y0, z1, x0, y0, z0, y1, -1, 0, 0, r, g, bl, tile, uScale);
+        // sides: wallQuad expects the wall height, not the absolute top Y
+        float wallHeight = y1 - y0;
+        wallQuad(x0, y0, z0, x1, y0, z0, wallHeight, 0, 0, -1, r, g, bl, tile, uScale);
+        wallQuad(x1, y0, z0, x1, y0, z1, wallHeight, 1, 0, 0, r, g, bl, tile, uScale);
+        wallQuad(x1, y0, z1, x0, y0, z1, wallHeight, 0, 0, 1, r, g, bl, tile, uScale);
+        wallQuad(x0, y0, z1, x0, y0, z0, wallHeight, -1, 0, 0, r, g, bl, tile, uScale);
     }
 
     /** Vertical quad from (x0,z0) to (x1,z1), with outward normal (nx,0,nz). */
