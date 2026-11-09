@@ -168,7 +168,6 @@ public final class WorldRenderer implements Disposable {
         worldShader.setUniformf("u_fogStart", fogStart);
         worldShader.setUniformf("u_fogEnd", fogEnd);
         worldShader.setUniformf("u_night", sun.night);
-        worldShader.setUniformf("u_time", time);
         worldShader.setUniformf("u_tint", 1f, 1f, 1f, 1f);
         worldShader.setUniformi("u_tex", 0);
         atlas.bind(0);

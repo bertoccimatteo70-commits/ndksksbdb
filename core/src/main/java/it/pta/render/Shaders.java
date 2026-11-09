@@ -34,7 +34,6 @@ public final class Shaders {
             + "uniform float u_fogStart;\n"
             + "uniform float u_fogEnd;\n"
             + "uniform float u_night;\n"
-            + "uniform float u_time;\n"
             + "uniform vec4 u_tint;\n"
             + "varying vec4 v_color;\n"
             + "varying vec3 v_normal;\n"

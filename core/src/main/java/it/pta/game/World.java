@@ -193,7 +193,8 @@ public final class World implements PoliceSystem.PoliceHost {
             gx = gHit.x + 2.5f;
             gz = gHit.z + 2.5f;
         }
-        players[0].setPosition(gx, gz, map);
+        float[] gSafe = safeSpawn(gx, gz);
+        players[0].setPosition(gSafe[0], gSafe[1], map);
         Content.Place elisaHome = Content.get("casa_elisa");
         float ex = elisaHome == null ? gx : elisaHome.x;
         float ez = elisaHome == null ? gz : elisaHome.z;
@@ -202,8 +203,31 @@ public final class World implements PoliceSystem.PoliceHost {
             ex = eHit.x - 2.5f;
             ez = eHit.z + 2.5f;
         }
-        players[1].setPosition(ex, ez, map);
+        float[] eSafe = safeSpawn(ex, ez);
+        players[1].setPosition(eSafe[0], eSafe[1], map);
         players[1].heading = 0.2f;
+    }
+
+    /**
+     * Roads can pass under buildings or along narrow facades; spawning 2.5 m off the
+     * centre line may put the camera inside a wall, which looks like a black world on
+     * screen. Search nearby road-level points until a free one is found.
+     */
+    private float[] safeSpawn(float x, float z) {
+        if (!map.blocked(x, z, 0.55f)) {
+            return new float[]{x, z};
+        }
+        for (float r = 1.5f; r <= 24f; r += 1.5f) {
+            for (int i = 0; i < 16; i++) {
+                double a = i * Math.PI * 2.0 / 16.0;
+                float px = x + (float) Math.cos(a) * r;
+                float pz = z + (float) Math.sin(a) * r;
+                if (!map.blocked(px, pz, 0.55f)) {
+                    return new float[]{px, pz};
+                }
+            }
+        }
+        return new float[]{x, z};
     }
 
     public Player player() {

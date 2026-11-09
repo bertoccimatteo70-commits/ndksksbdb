@@ -1,5 +1,8 @@
 name: PTA Android build
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ main ]
@@ -65,6 +68,23 @@ jobs:
           name: PTA-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk PTA-1.0.1.apk
+          NOTES="Correzione verificata della schermata nera all'avvio. Crash Skin btn9up risolto; uniform u_time rimosso; streaming chunk attivo; spawn sicuro; fallback con messaggio al posto del nero. Avvio, intro, menu e partita verificati su Android 8.0 (API 26). APK debug installabile: arm64-v8a, armeabi-v7a, x86_64."
+          if gh release view v1.0.1 >/dev/null 2>&1; then
+            gh release upload v1.0.1 PTA-1.0.1.apk --clobber
+          else
+            gh release create v1.0.1 PTA-1.0.1.apk \
+              --title "PTA 1.0.1 - fix schermata nera" \
+              --target "$GITHUB_SHA" \
+              --notes "$NOTES"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Upload test and build reports
         if: always()

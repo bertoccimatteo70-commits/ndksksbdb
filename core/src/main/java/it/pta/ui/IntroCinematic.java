@@ -48,6 +48,11 @@ public final class IntroCinematic {
         if (finished) {
             return;
         }
+        if (shots.isEmpty()) {
+            // Never leave the player on a black frame if content failed to load.
+            finished = true;
+            return;
+        }
         time += dt;
         if (time >= total) {
             finished = true;
@@ -123,10 +128,10 @@ public final class IntroCinematic {
             };
             int idx = Math.min(titles.length - 1, shot);
             a.title.setColor(0.97f, 0.92f, 0.78f, captions * 0.95f);
-            a.title.getData().setScale(0.58f);
+            a.title.getData().setScale(a.fontScale * 0.58f);
             layout.setText(a.title, titles[idx]);
             a.title.draw(batch, layout, w * 0.5f - layout.width * 0.5f, bar + a.dp(58));
-            a.title.getData().setScale(1f);
+            a.title.getData().setScale(a.fontScale);
             a.small.setColor(0.82f, 0.88f, 0.94f, captions);
             layout.setText(a.small, subs[idx]);
             a.small.draw(batch, layout, w * 0.5f - layout.width * 0.5f, bar + a.dp(34));

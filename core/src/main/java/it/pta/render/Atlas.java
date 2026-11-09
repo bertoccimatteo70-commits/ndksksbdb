@@ -24,7 +24,7 @@ public final class Atlas {
     public static final int METAL = 6;
     public static final int FOLIAGE = 7;
     public static final int GLASS = 8;
-    public static final int SIZE = 1024;
+    public static final int SIZE = 512;
     public static final int CELL = SIZE / 3;
 
     public static Texture build() {
