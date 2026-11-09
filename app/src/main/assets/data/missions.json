@@ -1,0 +1,359 @@
+{
+  "missions": [
+    {
+      "id": "m01",
+      "chapter": 1,
+      "title": "Ritorno al Bure",
+      "character": "marco",
+      "requires": "",
+      "reward": 450,
+      "timeLimit": 0,
+      "spawnVehicle": "VAN",
+      "spawnPlace": "garage",
+      "intro": [
+        {"s": "Marco", "t": "Otto anni fuori. E la città è sempre la stessa: il Duomo, la pioggia sul porfido, i semafori che non funzionano."},
+        {"s": "Marco", "t": "L'officina di mio padre è ancora lì, in via dei Mercanti. Le chiavi sono sotto la grondaia, come sempre."},
+        {"s": "Telefono", "t": "Marco? Sono Elisa. Ti aspettavo in piazza. Non fare tardi, ho trovato qualcosa sui cantieri Valdibure."}
+      ],
+      "outro": [
+        {"s": "Elisa", "t": "Sei tornato davvero. Pensavo che dopo il processo non ti avrei più visto."},
+        {"s": "Marco", "t": "Mi serviva aria. E qualcuno mi ha detto che la Valdibure sta comprando mezzo Bure."},
+        {"s": "Elisa", "t": "Non solo comprando. Minacciando. Stanotte ci sono stati due incendi a Casalguidi."}
+      ],
+      "objectives": [
+        {"type": "goto", "text": "Raggiungi l'officina Bellandi", "place": "garage", "radius": 9},
+        {"type": "enter_vehicle", "text": "Sali sul furgone dell'officina", "vehicle": "VAN"},
+        {"type": "drive_to", "text": "Guida fino a Piazza del Duomo", "place": "duomo", "radius": 13},
+        {"type": "talk", "text": "Parla con Elisa in piazza", "place": "duomo", "radius": 6}
+      ]
+    },
+    {
+      "id": "m02",
+      "chapter": 1,
+      "title": "Il furgone sbagliato",
+      "character": "marco",
+      "requires": "m01",
+      "reward": 700,
+      "timeLimit": 420,
+      "failWanted": 4,
+      "spawnVehicle": "",
+      "intro": [
+        {"s": "Elisa", "t": "Il furgone che hanno rubato a mio zio è nel capannone dietro la zona industriale. Targhe rimosse, ma è lui."},
+        {"s": "Marco", "t": "E se dentro ci fosse la merce della Valdibure, non me la caverei con una multa."},
+        {"s": "Elisa", "t": "Allora non farti vedere. E se ti vedono, non fermarti."}
+      ],
+      "outro": [
+        {"s": "Marco", "t": "Nel cassone c'erano i registri dei cantieri. Nomi, cifre, date. Tutto quello che cercavi."},
+        {"s": "Elisa", "t": "Bene. Ora dobbiamo capire chi li firma. E perché la questura non ha mai aperto un fascicolo."}
+      ],
+      "objectives": [
+        {"type": "goto", "text": "Raggiungi il capannone", "place": "capannone", "radius": 12},
+        {"type": "collect", "text": "Recupera i registri dal furgone", "place": "capannone", "radius": 14, "count": 3},
+        {"type": "escape", "text": "Semina la polizia", "stars": 2}
+      ]
+    },
+    {
+      "id": "m03",
+      "chapter": 1,
+      "title": "Voci in biblioteca",
+      "character": "elisa",
+      "requires": "m02",
+      "reward": 620,
+      "timeLimit": 480,
+      "spawnVehicle": "SCOOTER",
+      "spawnPlace": "casa_elisa",
+      "intro": [
+        {"s": "Elisa", "t": "La Forteguerriana tiene gli archivi dei vecchi piani regolatori. Se la Valdibure ha comprato terreni agricoli, qui c'è la prova."},
+        {"s": "Elisa", "t": "Il bibliotecario mi deve un favore. Ma non posso entrare in scooter fino alla porta."},
+        {"s": "Telefono", "t": "Elisa, sei seguita. Una berlina scura è entrata in piazza. Non guardare."}
+      ],
+      "outro": [
+        {"s": "Elisa", "t": "Tre faldoni. Le firme sono tutte dello stesso assessore, sempre lo stesso giorno."},
+        {"s": "Elisa", "t": "E c'è una nota a margine: 'capannone di via Fiorentina, consegna 14'. Cosa consegnano?"},
+        {"s": "Marco", "t": "Lo scopriamo stanotte. Ma prima portati via da quella piazza."}
+      ],
+      "objectives": [
+        {"type": "enter_vehicle", "text": "Sali sullo scooter", "vehicle": "SCOOTER"},
+        {"type": "drive_to", "text": "Raggiungi la Biblioteca Forteguerriana", "place": "biblioteca", "radius": 12},
+        {"type": "collect", "text": "Trova i faldoni nell'archivio", "place": "biblioteca", "radius": 18, "count": 3},
+        {"type": "escape", "text": "Allontanati senza farti seguire", "stars": 1}
+      ]
+    },
+    {
+      "id": "m04",
+      "chapter": 2,
+      "title": "Notte al mercato",
+      "character": "both",
+      "requires": "m03",
+      "reward": 850,
+      "timeLimit": 540,
+      "spawnTarget": {"tag": "corriere", "type": "VAN", "place": "mercato", "route": ["mercato", "stazione"], "speed": 9},
+      "intro": [
+        {"s": "Marco", "t": "Piazza della Sala, mezzanotte. Il tipo con il giubbotto chiaro ritira il pacco ogni giovedì."},
+        {"s": "Elisa", "t": "Non perdiamolo di vista. Se ci vede, saltano tre mesi di lavoro."},
+        {"s": "Marco", "t": "Resto io in ombra. Tu tieni la moto accesa, non si sa mai."}
+      ],
+      "outro": [
+        {"s": "Elisa", "t": "È entrato in stazione con una valigetta. Ventiquattro ore dopo, la valigetta era vuota."},
+        {"s": "Marco", "t": "Allora il pacco è ancora al capannone. E noi sappiamo dove."}
+      ],
+      "objectives": [
+        {"type": "goto", "text": "Vai al mercato di Piazza della Sala", "place": "mercato", "radius": 14},
+        {"type": "tail", "text": "Segui l'uomo del pacco senza farti vedere", "place": "stazione", "target": "corriere", "distance": 26, "time": 45},
+        {"type": "chase", "text": "Raggiungi il corriere alla stazione", "target": "corriere", "radius": 9}
+      ]
+    },
+    {
+      "id": "m05",
+      "chapter": 2,
+      "title": "La corsa delle Bure",
+      "character": "marco",
+      "requires": "m04",
+      "reward": 900,
+      "timeLimit": 210,
+      "spawnVehicle": "SPORT",
+      "spawnPlace": "garage",
+      "intro": [
+        {"s": "Marco", "t": "Ho bisogno di soldi, non di firme. C'è una gara dietro le Bure: Pistoia, Agliana, Montale, giro secco."},
+        {"s": "Elisa", "t": "Se ti fermano con l'auto dell'officina, ci portano dentro entrambi."},
+        {"s": "Marco", "t": "Allora non mi fermeranno."}
+      ],
+      "outro": [
+        {"s": "Marco", "t": "Duemila euro e nessuno che mi abbia preso. Non male per uno che non corre da otto anni."},
+        {"s": "Elisa", "t": "Non male davvero. Ora però spendili bene: dobbiamo entrare in quel cantiere."}
+      ],
+      "objectives": [
+        {"type": "enter_vehicle", "text": "Sali sull'auto sportiva", "vehicle": "SPORT"},
+        {"type": "race", "text": "Passa i checkpoint della corsa", "route": ["duomo", "casa_agliana", "montale", "quarrata"], "radius": 22, "laps": 1}
+      ]
+    },
+    {
+      "id": "m06",
+      "chapter": 2,
+      "title": "Il cantiere",
+      "character": "elisa",
+      "requires": "m05",
+      "reward": 780,
+      "timeLimit": 420,
+      "failWanted": 4,
+      "intro": [
+        {"s": "Elisa", "t": "Il cantiere di via Fiorentina è chiuso per 'manutenzione'. Tengono i documenti in ufficio, al primo piano."},
+        {"s": "Marco", "t": "Io non posso entrare, mi conoscono. Tu scatta le foto e vattene."},
+        {"s": "Elisa", "t": "Ho una macchina fotografica e una bicicletta. Non mi serve altro."}
+      ],
+      "outro": [
+        {"s": "Elisa", "t": "Hanno pagato in contanti, sempre la stessa ditta: 'Fornaci Bure'. Che non esiste."},
+        {"s": "Marco", "t": "Esiste. Solo che sul registro delle imprese si chiama Valdibure Costruzioni."}
+      ],
+      "objectives": [
+        {"type": "goto", "text": "Entra nel cantiere", "place": "cantiere", "radius": 10},
+        {"type": "photo", "text": "Fotografa i documenti del cantiere", "place": "cantiere", "radius": 16, "time": 3},
+        {"type": "escape", "text": "Scappa dal cantiere", "stars": 2}
+      ]
+    },
+    {
+      "id": "m07",
+      "chapter": 3,
+      "title": "Agliana Express",
+      "character": "both",
+      "requires": "m06",
+      "reward": 1050,
+      "timeLimit": 300,
+      "failWanted": 4,
+      "spawnVehicle": "VAN",
+      "spawnPlace": "concessionaria",
+      "intro": [
+        {"s": "Marco", "t": "Il commercialista della Valdibure vuole vedere i registri. Di persona. Ad Agliana, entro stasera."},
+        {"s": "Elisa", "t": "È una trappola. Ma se registriamo la conversazione, abbiamo tutto."},
+        {"s": "Marco", "t": "Carico il furgone e parto. Tu tieni la polizia lontana dalla strada."}
+      ],
+      "outro": [
+        {"s": "Elisa", "t": "La registrazione è chiara: 'bonifici in nero, cantiere di Serravalle, il Francese gestisce tutto'."},
+        {"s": "Marco", "t": "'Il Francese'. Non lo sentivo nominare da quando avevo vent'anni."}
+      ],
+      "objectives": [
+        {"type": "enter_vehicle", "text": "Sali sul furgone carico", "vehicle": "VAN"},
+        {"type": "drive_to", "text": "Consegna i registri ad Agliana", "place": "casa_agliana", "radius": 16},
+        {"type": "escape", "text": "Perdi la polizia", "stars": 2}
+      ]
+    },
+    {
+      "id": "m08",
+      "chapter": 3,
+      "title": "Serravalle",
+      "character": "both",
+      "requires": "m07",
+      "reward": 1300,
+      "timeLimit": 360,
+      "spawnVehicle": "SEDAN",
+      "spawnPlace": "garage",
+      "intro": [
+        {"s": "Telefono", "t": "Marco. Il Francese sta salendo a Serravalle. Porta i registri al castello, ha un appuntamento."},
+        {"s": "Marco", "t": "Elisa, prendi l'auto. Non lo lasciamo arrivare in cima."},
+        {"s": "Elisa", "t": "Non facciamo stupidaggini. Lo seguiamo e basta."},
+        {"s": "Marco", "t": "Le stupidaggini le ha già fatte lui."}
+      ],
+      "outro": [
+        {"s": "Il Francese", "t": "Non capite niente. Io sono solo il contabile. Chi firma i permessi sta al piano di sopra."},
+        {"s": "Elisa", "t": "Al piano di sopra di cosa?"},
+        {"s": "Il Francese", "t": "Della Valdibure. Della giunta. Sono la stessa cosa."}
+      ],
+      "objectives": [
+        {"type": "enter_vehicle", "text": "Sali in auto", "vehicle": "SEDAN"},
+        {"type": "chase", "text": "Insegui il Francese fino a Serravalle", "target": "francese", "radius": 12},
+        {"type": "survive", "text": "Reggi il confronto con la scorta", "time": 25, "stars": 2}
+      ],
+      "spawnTarget": {"tag": "francese", "type": "SPORT", "place": "duomo", "route": ["duomo", "serravalle_castello"], "speed": 21}
+    },
+    {
+      "id": "m09",
+      "chapter": 4,
+      "title": "Il tradimento",
+      "character": "elisa",
+      "requires": "m08",
+      "reward": 1150,
+      "timeLimit": 300,
+      "failWanted": 5,
+      "intro": [
+        {"s": "Elisa", "t": "Hanno scoperto il mio informatore. Mi ha chiamato dal capannone, poi la linea è caduta."},
+        {"s": "Marco", "t": "Non andare da sola."},
+        {"s": "Elisa", "t": "Infatti ho te. Ma se ti muovi, ti vedono."},
+        {"s": "Telefono", "t": "Elisa, sei tu? Sono io, Luca. Vieni sola. Hanno chiuso le porte."}
+      ],
+      "outro": [
+        {"s": "Elisa", "t": "Luca stava registrando tutto. Hanno ancora le bobine nel caveau della sede."},
+        {"s": "Marco", "t": "Allora stanotte entriamo in Valdibure. E stavolta non usciamo senza."}
+      ],
+      "objectives": [
+        {"type": "goto", "text": "Raggiungi il capannone", "place": "capannone", "radius": 14},
+        {"type": "photos", "text": "Trova Luca nel capannone", "place": "capannone", "radius": 20},
+        {"type": "survive", "text": "Resisti all'arrivo della polizia", "time": 30, "stars": 2},
+        {"type": "escape", "text": "Porta Luca in salvo a Casalguidi", "place": "casa_elisa", "radius": 18}
+      ]
+    },
+    {
+      "id": "m10",
+      "chapter": 4,
+      "title": "Assalto alla Valdibure",
+      "character": "both",
+      "requires": "m09",
+      "reward": 2000,
+      "timeLimit": 600,
+      "failWanted": 5,
+      "intro": [
+        {"s": "Marco", "t": "Sede Valdibure, zona est. Il caveau è al seminterrato, le bobine di Luca nel secondo cassetto."},
+        {"s": "Elisa", "t": "E poi il registro dei bonifici. Senza quello, è la parola di due persone contro un'azienda."},
+        {"s": "Marco", "t": "Se succede qualcosa, ci vediamo al Duomo."},
+        {"s": "Elisa", "t": "Promesso."}
+      ],
+      "outro": [
+        {"s": "Elisa", "t": "Abbiamo tutto. Bonifici, registrazioni, foto dei documenti."},
+        {"s": "Marco", "t": "Non ancora. Manca il nome sopra tutti gli altri."}
+      ],
+      "objectives": [
+        {"type": "goto", "text": "Arriva alla sede Valdibure", "place": "valdibure_hq", "radius": 12},
+        {"type": "collect", "text": "Recupera le bobine dal caveau", "place": "valdibure_hq", "radius": 18, "count": 3},
+        {"type": "chase", "text": "Blocca il direttore in fuga", "target": "direttore", "radius": 12},
+        {"type": "escape", "text": "Raggiungi il Duomo con le prove", "place": "duomo", "radius": 14}
+      ],
+      "spawnTarget": {"tag": "direttore", "type": "SEDAN", "place": "valdibure_hq", "route": ["valdibure_hq", "fortezza", "duomo"], "speed": 20}
+    },
+    {
+      "id": "m12",
+      "chapter": 5,
+      "title": "L'ultimo testimone",
+      "character": "both",
+      "requires": "m10",
+      "reward": 1650,
+      "timeLimit": 420,
+      "failWanted": 5,
+      "spawnVehicle": "SEDAN",
+      "spawnPlace": "garage",
+      "intro": [
+        {"s": "Elisa", "t": "Luca ha accettato di testimoniare, ma solo se lo portiamo noi in questura. Alle sette, binario due."},
+        {"s": "Marco", "t": "La stazione è piena di telecamere. Se la polizia è comprata, ci aspettano."},
+        {"s": "Elisa", "t": "Allora arriviamo prima. E se ci fermano, non fermarti tu."},
+        {"s": "Luca", "t": "Ho paura, Elisa. Ma quei registri sono l'unica cosa che mi resta."}
+      ],
+      "outro": [
+        {"s": "Marco", "t": "Luca è al sicuro. Ha firmato tutto davanti al magistrato."},
+        {"s": "Elisa", "t": "Manca un ultimo passo. La firma in fondo al registro non è dell'assessore."},
+        {"s": "Marco", "t": "Di chi è, allora?"},
+        {"s": "Elisa", "t": "Di chi ci ha mandato la polizia addosso. Stasera lo scopriamo al Duomo."}
+      ],
+      "objectives": [
+        {"type": "drive_to", "text": "Raggiungi la stazione prima delle sette", "place": "stazione", "radius": 18},
+        {"type": "survive", "text": "Proteggi Luca dall'irruzione", "time": 28, "stars": 2},
+        {"type": "escape", "text": "Porta Luca fuori dal centro", "stars": 2},
+        {"type": "goto", "text": "Consegna Luca alla Fortezza", "place": "fortezza", "radius": 16}
+      ]
+    },
+    {
+      "id": "m11",
+      "chapter": 5,
+      "title": "Duomo di mezzanotte",
+      "character": "both",
+      "requires": "m12",
+      "reward": 1500,
+      "timeLimit": 0,
+      "intro": [
+        {"s": "Elisa", "t": "Il nome era nell'ultima pagina del registro. L'assessore ai lavori pubblici, con la firma del sindaco accanto."},
+        {"s": "Marco", "t": "E adesso che facciamo, li aspettiamo davanti al Duomo?"},
+        {"s": "Elisa", "t": "No. Andiamo in questura, con tutto. E con un avvocato che non si fa comprare."},
+        {"s": "Marco", "t": "Pistoia non cambia mai, Elisa. Ma stanotte sì."}
+      ],
+      "outro": [
+        {"s": "Marco", "t": "Tre mesi dopo. Il cantiere è sequestrato, il Francese è dentro, la Valdibure è fallita."},
+        {"s": "Elisa", "t": "E l'officina di tuo padre ha riaperto. Con te dietro il bancone."},
+        {"s": "Marco", "t": "Pistoia è piccola. Ma adesso, almeno, è nostra."},
+        {"s": "PTA", "t": "Campagna completata. Sei libero di esplorare tutta la provincia di Pistoia."}
+      ],
+      "objectives": [
+        {"type": "goto", "text": "Raggiungi la Fortezza Santa Barbara", "place": "fortezza", "radius": 16},
+        {"type": "talk", "text": "Consegna le prove alla questura", "place": "questura", "radius": 10}
+      ]
+    },
+    {
+      "id": "s01",
+      "chapter": 0,
+      "title": "Taxi del Bure",
+      "character": "both",
+      "side": true,
+      "requires": "m01",
+      "reward": 320,
+      "timeLimit": 180,
+      "intro": [
+        {"s": "Radio", "t": "Taxi Pistoia, corsa per la stazione. Cliente impaziente."},
+        {"s": "Marco", "t": "Almeno la benzina me la pagano."}
+      ],
+      "outro": [
+        {"s": "Radio", "t": "Corsa conclusa. Pagamento sul conto."}
+      ],
+      "objectives": [
+        {"type": "enter_vehicle", "text": "Sali su un'auto", "vehicle": "CAR"},
+        {"type": "drive_to", "text": "Porta il cliente alla stazione", "place": "stazione", "radius": 14}
+      ]
+    },
+    {
+      "id": "s02",
+      "chapter": 0,
+      "title": "Consegna all'alba",
+      "character": "both",
+      "side": true,
+      "requires": "m01",
+      "reward": 360,
+      "timeLimit": 240,
+      "intro": [
+        {"s": "Telefono", "t": "Questa notte la pasticceria deve consegnare a Quarrata. Il furgone è pronto, non arrivare in ritardo."},
+        {"s": "Elisa", "t": "Quattro del mattino e già a correre. Bella vita."}
+      ],
+      "outro": [
+        {"s": "Telefono", "t": "Bravissimi. Le paste sono arrivate calde."}
+      ],
+      "objectives": [
+        {"type": "enter_vehicle", "text": "Sali sul furgone", "vehicle": "VAN"},
+        {"type": "drive_to", "text": "Consegna a Quarrata", "place": "casa_quarrata", "radius": 16}
+      ]
+    }
+  ]
+}

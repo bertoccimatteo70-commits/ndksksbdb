@@ -1,0 +1,11 @@
+{
+ "cols": 490,
+ "rows": 261,
+ "minX": -15632.540447300493,
+ "minZ": -8293.049999999921,
+ "step": 64.0,
+ "minHeight": 14,
+ "maxHeight": 1059,
+ "attribution": "Elevation: Mapzen/AWS Terrain Tiles (public domain)",
+ "zoom": 13
+}

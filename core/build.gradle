@@ -1,0 +1,24 @@
+// PTA - engine-independent game logic, usable on Android and on the JVM for tests.
+plugins {
+    id 'java-library'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    api 'com.badlogicgames.gdx:gdx:1.12.1'
+    api 'com.badlogicgames.gdx:gdx-freetype:1.12.1'
+    api 'com.badlogicgames.gdx-controllers:gdx-controllers-core:2.2.2'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+test {
+    useJUnit()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
