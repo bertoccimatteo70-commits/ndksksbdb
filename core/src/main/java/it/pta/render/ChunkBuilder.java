@@ -88,7 +88,7 @@ public final class ChunkBuilder {
         int[] idxs = map.areasIn(g.cx, g.cz);
         MeshBuilder wb = g.water;
         for (int idx : idxs) {
-            MapData.Area a = map.areas[idx];
+            MapData.Area a = map.area(idx);
             if (a.kind != 13) {
                 continue;
             }
@@ -132,7 +132,7 @@ public final class ChunkBuilder {
                               float x0, float z0, float x1, float z1, int lod) {
         int[] idxs = map.roadsIn(cx, cz);
         for (int idx : idxs) {
-            MapData.RoadWay w = map.roads[idx];
+            MapData.RoadWay w = map.road(idx);
             boolean paved = w.cls <= 8;
             MeshBuilder mb = g.current();
             int tile = paved ? (w.cls == 9 ? Atlas.CONCRETE : Atlas.ASHPALT) : Atlas.CONCRETE;
@@ -265,11 +265,11 @@ public final class ChunkBuilder {
     private static void buildings(MapData map, ChunkGeometry g, int cx, int cz, int lod) {
         int[] idxs = map.buildingsIn(cx, cz);
         for (int idx : idxs) {
-            MapData.Building b = map.buildings[idx];
-            if (lod == 1 && b.area < 38f) {
-                continue;
-            }
-            if (lod == 2 && b.area < 130f) {
+            MapData.Building b = map.building(idx);
+            if (lod > 0) {
+                // LOD 1/2 keeps every building, but uses one extruded box instead of
+                // detailed facades. Nothing is removed from the map.
+                simpleBuilding(map, g, b, lod);
                 continue;
             }
             MeshBuilder mb = g.current();
@@ -343,6 +343,21 @@ public final class ChunkBuilder {
         }
     }
 
+    /**
+     * Cheap LOD representation: one box per building. It keeps every footprint in the
+     * distance instead of dropping small buildings, while avoiding facade geometry.
+     */
+    private static void simpleBuilding(MapData map, ChunkGeometry g, MapData.Building b, int lod) {
+        float w = Math.max(1.0f, b.maxX - b.minX);
+        float d = Math.max(1.0f, b.maxZ - b.minZ);
+        float baseY = map.heightAt(b.cx, b.cz) - 0.25f;
+        float[] fac = Palette.facade(b.facade);
+        float shade = lod == 1 ? 0.82f : 0.70f;
+        MeshBuilder mb = g.current();
+        mb.box(b.cx, baseY + b.height * 0.5f, b.cz, w * 0.5f, b.height * 0.5f, d * 0.5f,
+                fac[0] * shade, fac[1] * shade, fac[2] * shade, Atlas.FACADE, TILING);
+    }
+
     // -------------------------------------------------------------------- props
 
     private static void props(MapData map, ChunkGeometry g, int cx, int cz,
@@ -350,7 +365,7 @@ public final class ChunkBuilder {
         java.util.Random rnd = new java.util.Random((cx * 73856093L) ^ (cz * 19349663L));
         int[] areas = map.areasIn(cx, cz);
         for (int idx : areas) {
-            MapData.Area a = map.areas[idx];
+            MapData.Area a = map.area(idx);
             if (a.kind != 5 && a.kind != 6 && a.kind != 7) {
                 continue;
             }
@@ -378,7 +393,7 @@ public final class ChunkBuilder {
         // street lamps along main roads
         int[] roads = map.roadsIn(cx, cz);
         for (int idx : roads) {
-            MapData.RoadWay w = map.roads[idx];
+            MapData.RoadWay w = map.road(idx);
             if (w.cls > 6 || w.length < 4) {
                 continue;
             }

@@ -31,11 +31,20 @@ public class MapAndContentTest {
     public void realPistoiaMapLoadsWithStreetsAndElevation() {
         FileHandle f = asset("map/pta_map.bin");
         assertTrue("map binary missing at " + f.file().getAbsolutePath(), f.exists());
-        MapData map = MapData.load(f.readBytes());
-        assertTrue("buildings", map.buildings.length > 60000);
-        assertTrue("roads", map.roads.length > 20000);
-        assertTrue("areas", map.areas.length > 3000);
-        assertTrue("pois", map.pois.length > 1000);
+        MapData map = MapData.open(f.file());
+        // These are the complete OSM counts baked in pta_map.json. None may be cut.
+        assertEquals("buildings", 71844, map.buildingCount);
+        assertEquals("roads", 26296, map.roadCount);
+        assertEquals("areas", 4785, map.areaCount);
+        assertEquals("pois", 2321, map.poiCount);
+        assertEquals("names", 3876, map.nameCount);
+        map.verifyCounts();
+        JsonValue meta = new JsonReader().parse(asset("map/pta_map.json").readString("UTF-8"));
+        JsonValue counts = meta.get("counts");
+        assertEquals("json buildings", counts.getInt("buildings"), map.buildingCount);
+        assertEquals("json roads", counts.getInt("roads"), map.roadCount);
+        assertEquals("json areas", counts.getInt("areas"), map.areaCount);
+        assertEquals("json pois", counts.getInt("pois"), map.poiCount);
 
         float duomoX = Geo.x(10.91720);
         float duomoZ = Geo.z(43.93340);
@@ -48,6 +57,50 @@ public class MapAndContentTest {
         assertTrue("Pistoia elevation plausible: " + pistoia, pistoia > -20 && pistoia < 300);
         assertTrue("Serravalle hills must be higher than Pistoia: " + serravalle + " vs " + pistoia,
                 serravalle > pistoia + 20);
+    }
+
+    @Test
+    public void everyOsmBuildingIsStillIndexed() {
+        MapData map = MapData.open(asset("map/pta_map.bin").file());
+        boolean[] seen = new boolean[map.buildingCount];
+        for (int cz = map.minCZ; cz < map.minCZ + map.nCZ; cz++) {
+            for (int cx = map.minCX; cx < map.minCX + map.nCX; cx++) {
+                for (int id : map.buildingsIn(cx, cz)) {
+                    assertTrue("building id in range", id >= 0 && id < seen.length);
+                    seen[id] = true;
+                }
+            }
+        }
+        for (int i = 0; i < seen.length; i++) {
+            assertTrue("building missing from chunks: " + i, seen[i]);
+        }
+    }
+
+    @Test
+    public void allSeventyOsmInteriorsAreAvailableAndLoadedOnDemand() {
+        FileHandle f = asset("map/pta_map.bin");
+        MapData map = MapData.open(f.file());
+        Content.init(map, asset("map/landmarks.json").readString("UTF-8"));
+        assertEquals("interiors", 70, Content.interiors().size());
+        assertEquals("streaming cache starts empty", 0, map.cachedBuildingChunks());
+        // Reading chunks must not decode the whole province, and the cache must stay
+        // bounded even after walking across many chunks.
+        int touched = 0;
+        for (int cz = -4; cz <= 4; cz++) {
+            for (int cx = -4; cx <= 4; cx++) {
+                int[] ids = map.buildingsIn(cx, cz);
+                if (ids.length > 0) {
+                    map.building(ids[0]);
+                    touched++;
+                }
+            }
+        }
+        assertTrue("chunks touched", touched > 2);
+        assertTrue("bounded building cache: " + map.cachedBuildingChunks(),
+                map.cachedBuildingChunks() <= 16);
+        assertTrue("bounded road cache", map.cachedRoads() <= 1024);
+        map.releaseAllChunks();
+        assertEquals("release", 0, map.cachedBuildingChunks());
     }
 
     @Test

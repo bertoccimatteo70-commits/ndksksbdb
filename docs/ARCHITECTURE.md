@@ -22,8 +22,13 @@ Geofabrik italy/centro (387 MB PBF)
 
 Il file binario contiene: header e proiezione, griglia DEM int16, tabella nomi,
 edifici (footprint + altezza + colori), strade (classe, larghezza, flag, punti),
-aree, POI. Il loader (`MapData`) costruisce un indice CSR per chunk da 512 m:
-`buildingsIn`, `roadsIn`, `areasIn`, `poisIn` restituiscono indici senza allocare.
+aree, POI. Al primo avvio il file integro viene copiato nello storage interno e
+mappato in sola lettura. Il loader (`MapData`) costruisce un indice CSR per chunk da
+512 m con **offset**, non con geometrie: `buildingsIn`, `roadsIn`, `areasIn`,
+`poisIn` restituiscono indici. La geometria viene decodificata su richiesta e tenuta
+in cache limitate (16 chunk edifici, 1.024 strade, 512 aree); `releaseChunk` libera
+la cache quando il chunk esce dal raggio. I conteggi restano quelli originali:
+71.844 edifici, 26.296 strade, 4.785 aree, 2.321 POI.
 
 Collisioni: `blocked(x,z,radius)` contro i footprint; `resolveCollision` per il
 personaggio; `heightAt` bilineare sul DEM; `nearestRoad` su bbox con filtro guidabile.
@@ -31,7 +36,8 @@ personaggio; `heightAt` bilineare sul DEM; `nearestRoad` su bbox con filtro guid
 ## Rendering
 
 - `ChunkManager`: streaming asincrono su thread di background, LOD 0/1/2 per distanza,
-  upload GPU sul thread GL, eviction oltre la distanza di vista.
+  upload GPU sul thread GL, eviction oltre la distanza di vista. Il LOD 1/2 disegna
+  ogni edificio come box semplificato: nessun edificio viene scartato a distanza.
 - `ChunkBuilder`: terreni, strade con marciapiedi e segnaletica, edifici estrusi con
   tetti, alberi, lampioni, acqua. Un chunk è **una draw call** grazie a un atlante 3×3
   e all'indice del tile codificato nell'alpha del colore vertice.
@@ -79,11 +85,13 @@ Nessuna shadow map in tempo reale: scelta documentata per GLES2 e thermal budget
 
 ## Interni
 
-All'ingresso di una casa o garage viene costruita/caricata una mesh locale (pavimento,
-pareti, soffitto, arredi) e il giocatore passa in modalità `indoor`: collisioni sui
-limiti della stanza, nessun rendering del mondo esterno, camera ravvicinata. Il letto
-salva; il ponte del garage richiama un veicolo posseduto. È una singola planimetria
-per tipo, non interni unici per edificio (limite dichiarato).
+I 70 edifici OSM selezionati da `Content` sono visitabili. All'ingresso viene
+costruita al volo una mesh locale (pavimento, pareti, soffitto, arredi) con dimensioni
+e colori derivati dall'edificio; il giocatore passa in modalità `indoor`: collisioni
+sui limiti della stanza, nessun rendering del mondo esterno, camera ravvicinata. La
+mesh viene liberata all'uscita, quindi non ci sono 70 interni in RAM. Il letto salva;
+il ponte del garage richiama un veicolo posseduto. Le planimetrie non sono ancora
+modelli architettonici unici per ogni singola casa.
 
 ## Test
 
@@ -103,6 +111,7 @@ per tipo, non interni unici per edificio (limite dichiarato).
   automaticamente.
 - Nuove missioni: aggiungere un oggetto a `missions.json`; il motore interpreta i tipi
   già supportati.
-- Nuovi interni: sostituire la mesh in `World.room(...)` con modelli per proprietà.
+- Nuovi interni: estendere il set di 70 edifici in `Content` o sostituire la mesh
+generata in `World.room(...)` con modelli per proprietà.
 - Ombre reali: predisporre una shadow map solo su preset ULTRA se il target lo regge,
   mantenendo il fallback blob.

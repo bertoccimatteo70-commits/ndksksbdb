@@ -597,17 +597,11 @@ public final class GameUi {
         MapView() {
             float px = world.player().x;
             float pz = world.player().z;
-            for (MapData.RoadWay r : world.map.roads) {
-                if (r.maxX < px - 3000 || r.minX > px + 3000 || r.maxZ < pz - 3000 || r.minZ > pz + 3000) {
-                    continue;
-                }
-                for (int i = 0; i + 3 < r.pts.length; i += 2) {
-                    roads.add(new float[]{r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]});
-                }
-                if (roads.size() > 900) {
-                    break;
-                }
-            }
+            world.map.forEachRoadSegment(px - 3000, pz - 3000, px + 3000, pz + 3000,
+                    (x0, z0, x1, z1, drivable) -> {
+                        roads.add(new float[]{x0, z0, x1, z1});
+                        return roads.size() < 900;
+                    }, 900);
         }
 
         @Override
