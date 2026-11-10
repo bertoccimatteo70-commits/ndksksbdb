@@ -142,9 +142,23 @@ public class MapAndContentTest {
                 !map.blocked(x, z, 0.55f));
         float h = map.heightAt(x, z);
         assertTrue("garage spawn height plausible: " + h, h > -20 && h < 300);
-        // Camera position logged by the Android build for the same spawn.
-        assertTrue("garage camera must not be inside a wall",
-                !map.blocked(-242.66412f, -62.891857f, 0.4f));
+        // Mirror the real third-person boom without constructing a GDX camera in a
+        // plain JVM test. At least one shortened boom position must be outside the
+        // footprints; this is exactly the fallback CameraRig applies each frame.
+        float camYaw = (float) Math.atan2(
+                hit.way.pts[hit.segment * 2 + 2] - hit.way.pts[hit.segment * 2],
+                -(hit.way.pts[hit.segment * 2 + 3] - hit.way.pts[hit.segment * 2 + 1]));
+        float horiz = (float) (Math.cos(0.24f) * 5.2f);
+        float ox = -(float) Math.sin(camYaw) * horiz;
+        float oz = (float) Math.cos(camYaw) * horiz;
+        boolean cameraClear = false;
+        for (float t = 1f; t >= 0.12f; t -= 0.11f) {
+            if (!map.blocked(x + ox * t, z + oz * t, 0.4f)) {
+                cameraClear = true;
+                break;
+            }
+        }
+        assertTrue("garage camera must find a boom position outside walls", cameraClear);
         // The initial view must follow the road instead of facing the nearest facade.
         int seg = hit.segment * 2;
         float dx = hit.way.pts[seg + 2] - hit.way.pts[seg];

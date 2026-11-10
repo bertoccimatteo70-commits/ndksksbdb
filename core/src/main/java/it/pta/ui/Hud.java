@@ -113,6 +113,13 @@ public final class Hud extends Actor {
             if (world.missions.markerActive) {
                 a.small.setColor(0.72f, 0.84f, 0.95f, 1f);
                 a.small.draw(batch, (int) dist + " m", px + pw - a.dp(60), py + a.dp(58));
+                a.small.setColor(world.gpsAvailable ? 0.45f : 0.95f,
+                        world.gpsAvailable ? 0.92f : 0.60f,
+                        world.gpsAvailable ? 0.95f : 0.28f, 1f);
+                String gps = world.gpsAvailable
+                        ? "GPS stradale · " + (int) (world.gpsDistance / 1000f * 10) / 10f + " km"
+                        : "GPS: " + (world.gpsMessage.isEmpty() ? "calcolo percorso" : world.gpsMessage);
+                a.small.draw(batch, gps, px + a.dp(14), py + a.dp(16));
             }
         }
 
@@ -222,6 +229,26 @@ public final class Hud extends Actor {
             float angle = (float) Math.toDegrees(Math.atan2(dy, dx));
             float thick = s[4] > 0 ? 2.2f * dp : 1.1f * dp;
             batch.draw(a.whiteRegion, x0, y0 - thick * 0.5f, 0, thick * 0.5f, len, thick, 1f, 1f, angle);
+        }
+
+        // GPS route: same points as the 3D ribbon on the asphalt.
+        if (world.gpsAvailable && world.gpsRoute != null) {
+            batch.setColor(0.10f, 0.92f, 0.96f, 0.95f);
+            float[] route = world.gpsRoute;
+            for (int i = 0; i + 3 < route.length; i += 2) {
+                float x0 = cx + (route[i] - world.player().x) / scale;
+                float y0 = cy - (route[i + 1] - world.player().z) / scale;
+                float x1 = cx + (route[i + 2] - world.player().x) / scale;
+                float y1 = cy - (route[i + 3] - world.player().z) / scale;
+                float dx = x1 - x0, dy = y1 - y0;
+                float len = (float) Math.sqrt(dx * dx + dy * dy);
+                if (len < 1f || Math.hypot(x0 - cx, y0 - cy) > radius) {
+                    continue;
+                }
+                float angle = (float) Math.toDegrees(Math.atan2(dy, dx));
+                batch.draw(a.whiteRegion, x0, y0 - 1.6f * dp, 0, 1.6f * dp,
+                        len, 3.2f * dp, 1f, 1f, angle);
+            }
         }
 
         // mission marker

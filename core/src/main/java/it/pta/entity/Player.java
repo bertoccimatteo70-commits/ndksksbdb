@@ -100,23 +100,42 @@ public final class Player {
             lastVx = lastVx / sp * targetSpeed;
             lastVz = lastVz / sp * targetSpeed;
         }
-        x += lastVx * dt;
-        z += lastVz * dt;
+        float moveX = lastVx * dt;
+        float moveZ = lastVz * dt;
         speed = (float) Math.sqrt(lastVx * lastVx + lastVz * lastVz);
 
         if (indoor) {
+            x += moveX;
+            z += moveZ;
             x = MathUtils.clamp(x, roomMinX + 0.4f, roomMaxX - 0.4f);
             z = MathUtils.clamp(z, roomMinZ + 0.4f, roomMaxZ - 0.4f);
             y = roomFloorY;
             vy = 0;
             grounded = true;
         } else {
+            // Move in steps shorter than the player radius. A single large step can
+            // put the centre on the far side of a thin footprint before the push-out
+            // runs; substeps also keep wall sliding stable while running.
+            float moveLen = (float) Math.hypot(moveX, moveZ);
+            int steps = Math.max(1, (int) Math.ceil(moveLen / 0.10f));
+            float sx = moveX / steps, sz = moveZ / steps;
             float[] pos = {x, 0, z};
-            if (map.resolveCollision(pos, 0.34f)) {
-                x = pos[0];
-                z = pos[2];
+            boolean hit = false;
+            for (int i = 0; i < steps; i++) {
+                x += sx;
+                z += sz;
+                pos[0] = x;
+                pos[2] = z;
+                if (map.resolveCollision(pos, 0.34f)) {
+                    x = pos[0];
+                    z = pos[2];
+                    hit = true;
+                }
+            }
+            if (hit) {
                 lastVx *= 0.25f;
                 lastVz *= 0.25f;
+                speed = (float) Math.hypot(lastVx, lastVz);
             }
             x = MathUtils.clamp(x, map.minX + 20, map.maxX - 20);
             z = MathUtils.clamp(z, map.minZ + 20, map.maxZ - 20);

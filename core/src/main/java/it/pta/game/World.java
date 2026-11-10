@@ -23,6 +23,7 @@ import it.pta.render.WorldRenderer;
 import it.pta.ui.ControlLayout;
 import it.pta.ui.GameUi;
 import it.pta.world.MapData;
+import it.pta.world.RoadRouter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -96,6 +97,15 @@ public final class World implements PoliceSystem.PoliceHost {
     private String interiorHotKind = "door";
     private float interiorCooldown;
     private float currentCamYaw;
+    private final RoadRouter roadRouter;
+    private Mesh gpsMesh;
+    private float gpsTimer;
+    private float gpsLastX, gpsLastZ;
+    private float gpsLastTargetX, gpsLastTargetZ;
+    public boolean gpsAvailable;
+    public String gpsMessage = "";
+    public float gpsDistance;
+    public float[] gpsRoute;
 
     private static final class Target {
         Vehicle vehicle;
@@ -143,6 +153,7 @@ public final class World implements PoliceSystem.PoliceHost {
         this.traffic = new TrafficSystem(map, vehicles);
         this.police = new PoliceSystem(map, vehicles);
         this.missions = new MissionSystem(this, map);
+        this.roadRouter = new RoadRouter(map);
 
         Content.init(map, landmarksJson);
         Gdx.app.log("PTA", "world: OSM buildings=" + map.buildingCount
@@ -326,6 +337,7 @@ public final class World implements PoliceSystem.PoliceHost {
         traffic.update(dt, p, renderer.sun.night);
         police.update(dt, p, this);
         missions.update(dt);
+        updateGps(dt, p);
 
         if (p.vehicle != null) {
             Vehicle v = p.vehicle;
@@ -599,7 +611,10 @@ public final class World implements PoliceSystem.PoliceHost {
             px = v.x - ox;
             pz = v.z - oz;
         }
-        p.setPosition(px, pz, map);
+        // Never trust the first free-looking side: safeSpawn tests a wider radius
+        // and the whole nearby footprint before the player is committed outside.
+        float[] safe = safeSpawn(px, pz);
+        p.setPosition(safe[0], safe[1], map);
         p.heading = v.heading;
         v.speed = 0;
         audio.setEngine(false, 0, 0);
@@ -661,7 +676,12 @@ public final class World implements PoliceSystem.PoliceHost {
             }
             return;
         }
-        Content.Place near = nearestPlace(p.x, p.z, 7.5f, null);
+        // Homes, garages and playable interiors are entered from their street door,
+        // not by touching the middle of the OSM footprint (which is a solid wall).
+        Content.Place near = nearestEntrancePlace(p.x, p.z, 4.2f);
+        if (near == null) {
+            near = nearestPlace(p.x, p.z, 7.5f, null);
+        }
         if (near == null) {
             return;
         }
@@ -709,6 +729,35 @@ public final class World implements PoliceSystem.PoliceHost {
             default:
                 break;
         }
+    }
+
+    private Content.Place nearestEntrancePlace(float x, float z, float radius) {
+        Content.Place best = null;
+        float bestD = radius;
+        for (Content.Place pl : Content.all()) {
+            if (pl.kind != Content.Kind.INTERIOR && pl.kind != Content.Kind.HOME
+                    && pl.kind != Content.Kind.GARAGE) {
+                continue;
+            }
+            float[] e = entranceFor(pl);
+            float d = (float) Math.hypot(e[0] - x, e[1] - z);
+            if (d < bestD) {
+                bestD = d;
+                best = pl;
+            }
+        }
+        return best;
+    }
+
+    /** Street-side door position, checked against the surrounding footprints. */
+    private float[] entranceFor(Content.Place pl) {
+        MapData.Building b = map.buildingAt(pl.x, pl.z);
+        if (b == null) {
+            return new float[]{pl.x, pl.z + 3.2f};
+        }
+        float doorX = (b.minX + b.maxX) * 0.5f;
+        float doorZ = b.maxZ + 1.0f;
+        return safeSpawn(doorX, doorZ);
     }
 
     private Content.Place nearestPlace(float x, float z, float radius, Content.Kind kind) {
@@ -858,8 +907,11 @@ public final class World implements PoliceSystem.PoliceHost {
         Player p = player();
         float ox = interior.cx;
         float oz = interior.cz + interior.halfZ + 2.2f;
+        // The old exit could land inside the same (or a neighbouring) footprint.
+        // Validate a wider radius and fall back to a free point near the road.
+        float[] safe = safeSpawn(ox, oz);
         p.indoor = false;
-        p.setPosition(ox, oz, map);
+        p.setPosition(safe[0], safe[1], map);
         p.heading = (float) Math.PI;
         interior.dispose();
         interior = null;
@@ -1029,6 +1081,18 @@ public final class World implements PoliceSystem.PoliceHost {
             return;
         }
 
+        if (gpsMesh != null) {
+            meshXf.idt();
+            shader.setUniformf("u_tint", 1f, 1f, 1f, 1f);
+            shader.setUniformMatrix("u_model", meshXf);
+            gpsMesh.render(shader, GL20.GL_TRIANGLES);
+        }
+        if (gpsMesh != null) {
+            meshXf.idt();
+            shader.setUniformf("u_tint", 1f, 1f, 1f, 1f);
+            shader.setUniformMatrix("u_model", meshXf);
+            gpsMesh.render(shader, GL20.GL_TRIANGLES);
+        }
         if (p.vehicle == null) {
             p.draw(shader, renderer);
         } else {
@@ -1294,7 +1358,72 @@ public final class World implements PoliceSystem.PoliceHost {
         }
     }
 
+    private void updateGps(float dt, Player p) {
+        gpsTimer -= dt;
+        if (!missions.markerActive) {
+            if (gpsMesh != null) {
+                gpsMesh.dispose();
+                gpsMesh = null;
+            }
+            gpsRoute = null;
+            gpsAvailable = false;
+            gpsMessage = "";
+            gpsDistance = 0f;
+            return;
+        }
+        float moved = (float) Math.hypot(p.x - gpsLastX, p.z - gpsLastZ);
+        float targetMoved = (float) Math.hypot(missions.markerX - gpsLastTargetX,
+                missions.markerZ - gpsLastTargetZ);
+        if (gpsTimer > 0f && moved < 10f && targetMoved < 10f) {
+            return;
+        }
+        gpsTimer = 1.5f;
+        gpsLastX = p.x;
+        gpsLastZ = p.z;
+        gpsLastTargetX = missions.markerX;
+        gpsLastTargetZ = missions.markerZ;
+        RoadRouter.Route route = roadRouter.route(p.x, p.z, missions.markerX, missions.markerZ);
+        gpsAvailable = route.found;
+        gpsMessage = route.message;
+        gpsDistance = route.length;
+        gpsRoute = route.found ? route.points : null;
+        if (gpsMesh != null) {
+            gpsMesh.dispose();
+            gpsMesh = null;
+        }
+        if (!route.found) {
+            return;
+        }
+        MeshBuilder mb = new MeshBuilder();
+        float[] pts = route.points;
+        for (int i = 0; i + 3 < pts.length; i += 2) {
+            float ax = pts[i], az = pts[i + 1];
+            float bx = pts[i + 2], bz = pts[i + 3];
+            float dx = bx - ax, dz = bz - az;
+            float len = (float) Math.hypot(dx, dz);
+            if (len < 0.15f) continue;
+            float nx = -dz / len, nz = dx / len;
+            float half = 0.48f;
+            float y0 = map.heightAt(ax, az) + 0.16f;
+            float y1 = map.heightAt(bx, bz) + 0.16f;
+            int v0 = mb.vertex(ax + nx * half, y0, az + nz * half, 0, 1, 0,
+                    0.12f, 0.92f, 0.96f, Atlas.PAINT, 0, 0);
+            int v1 = mb.vertex(ax - nx * half, y0, az - nz * half, 0, 1, 0,
+                    0.12f, 0.92f, 0.96f, Atlas.PAINT, 0, 1);
+            int v2 = mb.vertex(bx - nx * half, y1, bz - nz * half, 0, 1, 0,
+                    0.12f, 0.92f, 0.96f, Atlas.PAINT, 1, 1);
+            int v3 = mb.vertex(bx + nx * half, y1, bz + nz * half, 0, 1, 0,
+                    0.12f, 0.92f, 0.96f, Atlas.PAINT, 1, 0);
+            mb.quad(v0, v1, v2, v3);
+        }
+        gpsMesh = Meshes.from(mb);
+    }
+
     public void dispose() {
+        if (gpsMesh != null) {
+            gpsMesh.dispose();
+            gpsMesh = null;
+        }
         traffic.clear();
         marco.dispose();
         elisa.dispose();

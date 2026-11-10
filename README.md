@@ -9,11 +9,12 @@ Motore: **libGDX 1.12.1 + renderer OpenGL ES 2.0 proprietario** (Java 17).
 Nessun asset di terze parti, nessun marchio, nessuna musica protetta: texture, modelli,
 personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 
-> **Release corrente:** [PTA 1.0.4 — world design overhaul](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/tag/v1.0.4) · [Scarica PTA-1.0.4.apk](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/download/v1.0.4/PTA-1.0.4.apk) (8,4 MB)
+> **Release corrente:** [PTA 1.0.5 — solid city and road GPS](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/tag/v1.0.5) · [Scarica PTA-1.0.5.apk](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/download/v1.0.5/PTA-1.0.5.apk) (8,5 MB)
 >
-> La Release 1.0.4 include l'overhaul architettonico e urbano: facciate e tetti
-> differenziati, ingressi e ringhiere, segnaletica e attraversamenti, arredo e
-> vegetazione vari, materiali procedurali rifiniti e LOD con silhouette preservata.
+> La Release 1.0.5 rende leggibili le strade in tutti i LOD, solidi gli edifici con
+> collisione sul bordo reale dei poligoni OSM, sicuri gli ingressi/uscite degli interni
+> e disegna il GPS sulla rete stradale. Tutti i 71.844 edifici, 26.296 strade,
+> 17.679 elementi guidabili, aree, POI e 70 interni sono preservati.
 > APK debug installabile per arm64-v8a, armeabi-v7a e x86_64.
 
 ---
@@ -36,12 +37,15 @@ personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 | Audio procedurale con volumi separati | implementato |
 | APK installabile e pipeline GitHub Actions | build automatica nel workflow |
 
-Le verifiche automatiche coprono: caricamento della mappa reale, presenza di strade e
-altimetria, contenuto delle missioni, economia, preset e salvataggi. In questa fase la
-build è stata installata e avviata su un emulatore Android x86_64: il mondo è stato
-visualizzato con cielo, piazza, facciate, finestre, torre e HUD, e lo spawn è nella
-Piazza del Duomo con camera libera. Il collaudo su telefono fisico, la guida prolungata
-e le performance reali restano da fare: vedi [Limiti noti](#limiti-noti).
+Le verifiche automatiche 1.0.5 sono **20 test JVM verdi**: caricamento della mappa
+reale, conteggi OSM invariati, collisione sul bordo di un muro lungo, push-out da un
+footprint, camminata e corsa contro una facciata, auto a 34 m/s contro un edificio,
+percorso GPS che non attraversa footprint, strade presenti e contrastate in LOD 0/1/2,
+interni, missioni, economia, preset e salvataggi. La build è stata installata e avviata
+su emulatore Android x86_64: la città e le facciate sono state visualizzate in gioco
+dopo il caricamento dei chunk, con HUD e spawn nella Piazza del Duomo. Il collaudo su
+telefono fisico, la guida prolungata, la resa fotografica dell'asfalto in ogni zona e le
+performance reali restano da fare: vedi [Limiti noti](#limiti-noti).
 
 ---
 
@@ -57,9 +61,9 @@ e le performance reali restano da fare: vedi [Limiti noti](#limiti-noti).
 | RAM consigliata | 3 GB, con preset MEDIA |
 | GPU | OpenGL ES 2.0 |
 | Connessione | non richiesta dopo l'installazione |
-| Spazio | APK 8,4 MB; circa 7,7 MB di mappa copiati nello storage interno al primo avvio |
+| Spazio | APK 8,5 MB; circa 7,7 MB di mappa copiati nello storage interno al primo avvio |
 
-La Release `1.0.4` contiene un **APK debug** firmato con la chiave debug, pensato per
+La Release `1.0.5` contiene un **APK debug** firmato con la chiave debug, pensato per
 l'installazione diretta e il collaudo. Per la distribuzione sugli store serve una
 build release firmata.
 

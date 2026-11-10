@@ -202,17 +202,28 @@ public final class ChunkBuilder {
                         tint[0], tint[1], tint[2], tile, len * 0.12f, 0);
                 mb.quad(v0, v1, v2, v3);
 
-                if (lod == 0) {
+                // A light shoulder makes the asphalt boundary readable at every LOD,
+                // even before the detailed kerb and sidewalk meshes exist.
+                roadShoulder(map, mb, cax, caz, cbx, cbz, px, pz, hw, paved);
+                if (lod <= 1) {
+                    // LOD1 keeps the important markings; only the fine street furniture
+                    // is dropped. LOD2 still gets a solid edge line below.
                     roadMarkings(map, mb, w, cax, caz, cbx, cbz, dx, dz, len,
                             px, pz, hw, ya, yb, central);
                     if (paved && w.width >= 4.8f) {
                         sidewalks(map, mb, w, cax, caz, cbx, cbz, dx, dz, len,
-                                px, pz, hw, central);
+                                px, pz, hw, central, lod == 0);
                     }
-                    if (paved && w.cls <= 4 && central && len > 8f) {
+                    if (lod == 0 && paved && w.cls <= 4 && central && len > 8f) {
                         junctionCrosswalk(map, mb, w, (cax + cbx) * 0.5f,
                                 (caz + cbz) * 0.5f, dx / len, dz / len, hw);
                     }
+                } else {
+                    // Never let a road dissolve into the terrain from a high camera.
+                    paintLine(map, mb, cax, caz, cbx, cbz, px, pz,
+                            hw - 0.22f, 0.12f, 0.115f, 0.90f, 0.88f, 0.76f);
+                    paintLine(map, mb, cax, caz, cbx, cbz, px, pz,
+                            -hw + 0.22f, 0.12f, 0.115f, 0.90f, 0.88f, 0.76f);
                 }
             }
         }
@@ -273,10 +284,32 @@ public final class ChunkBuilder {
         }
     }
 
+    private static void roadShoulder(MapData map, MeshBuilder mb,
+                                     float ax, float az, float bx, float bz,
+                                     float px, float pz, float hw, boolean paved) {
+        float inner = hw + 0.015f;
+        float outer = hw + (paved ? 0.42f : 0.65f);
+        float r = paved ? 0.58f : 0.44f;
+        float g = paved ? 0.56f : 0.42f;
+        float b = paved ? 0.51f : 0.34f;
+        for (int side = -1; side <= 1; side += 2) {
+            float ox = px * side, oz = pz * side;
+            float x0 = ax + ox * inner, z0 = az + oz * inner;
+            float x1 = bx + ox * inner, z1 = bz + oz * inner;
+            float x2 = bx + ox * outer, z2 = bz + oz * outer;
+            float x3 = ax + ox * outer, z3 = az + oz * outer;
+            surface(mb, x0, map.heightAt(x0, z0) + 0.075f, z0,
+                    x1, map.heightAt(x1, z1) + 0.075f, z1,
+                    x2, map.heightAt(x2, z2) + 0.075f, z2,
+                    x3, map.heightAt(x3, z3) + 0.075f, z3,
+                    r, g, b, Atlas.CONCRETE, 0.35f, false);
+        }
+    }
+
     private static void sidewalks(MapData map, MeshBuilder mb, MapData.RoadWay w,
                                   float ax, float az, float bx, float bz,
                                   float dx, float dz, float len, float px, float pz,
-                                  float hw, boolean central) {
+                                  float hw, boolean central, boolean detailed) {
         float sw = central ? 1.75f : 1.45f;
         float inner = hw + 0.18f;
         float outer = inner + sw;
@@ -301,11 +334,13 @@ public final class ChunkBuilder {
                     ox1, oy1, oz1, ox0, oy0, oz0,
                     tr, tg, tb, tile, 0.22f, false);
             // kerb face, slightly darker, between road and pavement
-            float ky0 = map.heightAt(sx0, sz0) + 0.015f;
-            float ky1 = map.heightAt(sx1, sz1) + 0.015f;
-            wall(mb, sx0, sz0, sx1, sz1, ky0, sy0, -ox, -oz,
-                    0.62f, 0.60f, 0.55f, Atlas.CONCRETE, 0.45f, 0.82f);
-            if (!central && (w.cls <= 4)) {
+            if (detailed) {
+                float ky0 = map.heightAt(sx0, sz0) + 0.015f;
+                float ky1 = map.heightAt(sx1, sz1) + 0.015f;
+                wall(mb, sx0, sz0, sx1, sz1, ky0, sy0, -ox, -oz,
+                        0.62f, 0.60f, 0.55f, Atlas.CONCRETE, 0.45f, 0.82f);
+            }
+            if (detailed && !central && (w.cls <= 4)) {
                 // slim planting strip on major boulevards
                 float gx0 = ax + ox * (outer + 0.35f);
                 float gz0 = az + oz * (outer + 0.35f);
@@ -368,25 +403,29 @@ public final class ChunkBuilder {
 
     private static float[] roadTint(int cls, boolean paved) {
         if (!paved) {
-            return new float[]{0.48f, 0.45f, 0.38f};
+            // Rural lanes: warm, compacted earth/gravel, still darker than fields.
+            return new float[]{0.40f, 0.35f, 0.27f};
         }
         switch (cls) {
             case 0:
             case 1:
-                return new float[]{0.62f, 0.63f, 0.65f};
+                return new float[]{0.33f, 0.35f, 0.37f};
             case 2:
-                return new float[]{0.66f, 0.67f, 0.69f};
+                return new float[]{0.36f, 0.38f, 0.40f};
             case 3:
-                return new float[]{0.70f, 0.71f, 0.73f};
+                return new float[]{0.40f, 0.42f, 0.44f};
             case 4:
-                return new float[]{0.73f, 0.73f, 0.75f};
+                return new float[]{0.45f, 0.46f, 0.47f};
+            case 6:
+                // Industrial asphalt with a cooler, oily cast.
+                return new float[]{0.34f, 0.37f, 0.39f};
             case 7:
             case 8:
-                return new float[]{0.69f, 0.68f, 0.65f};
+                return new float[]{0.43f, 0.42f, 0.38f};
             case 9:
-                return new float[]{0.84f, 0.80f, 0.71f};
+                return new float[]{0.66f, 0.62f, 0.52f};
             default:
-                return new float[]{0.72f, 0.72f, 0.73f};
+                return new float[]{0.39f, 0.40f, 0.41f};
         }
     }
 

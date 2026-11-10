@@ -13,6 +13,7 @@ import com.badlogic.gdx.utils.Disposable;
 import it.pta.world.MapData;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -87,12 +88,27 @@ public final class ChunkManager implements Disposable {
         return (((long) cx) << 32) ^ (cz & 0xffffffffL);
     }
 
+    private static final class Request {
+        final int cx, cz, lod;
+        final long key;
+        final float distance;
+
+        Request(int cx, int cz, int lod, long key, float distance) {
+            this.cx = cx;
+            this.cz = cz;
+            this.lod = lod;
+            this.key = key;
+            this.distance = distance;
+        }
+    }
+
     public void update(Vector3 pos, float delta) {
         frame++;
         uploadFinished(2);
         int cx = map.cx(pos.x);
         int cz = map.cz(pos.z);
         int radiusChunks = (int) Math.ceil((viewDistance + 220f) / map.chunkSize);
+        ArrayList<Request> requests = new ArrayList<>();
         queued = building.size();
         for (int r = cz - radiusChunks; r <= cz + radiusChunks; r++) {
             for (int c = cx - radiusChunks; c <= cx + radiusChunks; c++) {
@@ -119,16 +135,34 @@ public final class ChunkManager implements Disposable {
                             && existing.lod != lod && !building.contains(k)) {
                         // LOD changed: rebuild sharper when approaching, cheaper when leaving.
                         existing.lod = lod;
-                        schedule(c, r, lod, k);
+                        requests.add(new Request(c, r, lod, k, dist));
                     }
                     continue;
                 }
-                if (building.contains(k) || building.size() >= 5) {
-                    continue;
+                if (!building.contains(k)) {
+                    requests.add(new Request(c, r, lod, k, dist));
                 }
-                schedule(c, r, lod, k);
             }
         }
+        // The old loop scheduled the far corner of the 7x7 window first. With a
+        // five-job cap that could starve the chunk under the player for a minute,
+        // producing a flat empty world. Always build nearest-first.
+        requests.sort(Comparator.comparingDouble(a -> a.distance));
+        for (Request q : requests) {
+            if (building.size() >= 5) {
+                break;
+            }
+            if (chunks.containsKey(q.key) && !building.contains(q.key)) {
+                Chunk old = chunks.get(q.key);
+                if (old != null && old.lod == q.lod && old.parts != null) {
+                    continue;
+                }
+            }
+            if (!building.contains(q.key)) {
+                schedule(q.cx, q.cz, q.lod, q.key);
+            }
+        }
+        queued = building.size();
         evict(pos);
     }
 

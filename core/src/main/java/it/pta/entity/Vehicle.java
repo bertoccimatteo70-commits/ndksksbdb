@@ -167,22 +167,33 @@ public final class Vehicle {
 
         float fx = MathUtils.sin(heading);
         float fz = -MathUtils.cos(heading);
-        float nx = x + fx * speed * dt;
-        float nz = z + fz * speed * dt;
-
-        // four-corner collision test against buildings
+        float moveX = fx * speed * dt;
+        float moveZ = fz * speed * dt;
         float hw = type.width * 0.42f;
         float hl = type.length * 0.42f;
+
+        // Sweep the whole footprint. Checking only the final position lets a fast
+        // car jump across a wall; steps of at most ~0.3 m keep every wall crossed.
+        float moveLen = (float) Math.hypot(moveX, moveZ);
+        int steps = Math.max(1, (int) Math.ceil(moveLen / 0.30f));
+        float sx = moveX / steps, sz = moveZ / steps;
         boolean blocked = false;
-        for (int i = 0; i < 4; i++) {
-            float ox = (i % 2 == 0 ? -hw : hw);
-            float oz = (i < 2 ? -hl : hl);
-            float px = nx + MathUtils.cos(heading) * ox + fx * oz;
-            float pz = nz - MathUtils.sin(heading) * ox + fz * oz;
-            if (map.blocked(px, pz, 0.35f)) {
+        for (int step = 0; step < steps; step++) {
+            float nx = x + sx;
+            float nz = z + sz;
+            if (vehicleFootprintBlocked(map, nx, nz, hw, hl)) {
                 blocked = true;
+                // If the current pose already overlaps, push it fully out instead of
+                // leaving the car vibrating inside the wall (anti-stuck guarantee).
+                float[] p = {x, y, z};
+                if (map.resolveCollision(p, type.width * 0.55f)) {
+                    x = p[0];
+                    z = p[2];
+                }
                 break;
             }
+            x = nx;
+            z = nz;
         }
         if (blocked) {
             float impact = Math.abs(speed);
@@ -191,9 +202,6 @@ public final class Vehicle {
                 lastImpact = impact;
             }
             speed = -speed * 0.18f;
-        } else {
-            x = nx;
-            z = nz;
         }
         x = MathUtils.clamp(x, map.minX + 30, map.maxX - 30);
         z = MathUtils.clamp(z, map.minZ + 30, map.maxZ - 30);
@@ -223,6 +231,25 @@ public final class Vehicle {
         if (damage > 60f) {
             engineOn = damage < 95f;
         }
+    }
+
+    /** Samples the full vehicle rectangle, including edges and centre. */
+    private boolean vehicleFootprintBlocked(MapData map, float px, float pz,
+                                            float hw, float hl) {
+        float fx = MathUtils.sin(heading);
+        float fz = -MathUtils.cos(heading);
+        float rx = MathUtils.cos(heading);
+        float rz = -MathUtils.sin(heading);
+        for (int ix = -1; ix <= 1; ix++) {
+            for (int iz = -1; iz <= 1; iz++) {
+                float x = px + rx * hw * ix + fx * hl * iz;
+                float z = pz + rz * hw * ix + fz * hl * iz;
+                if (map.blocked(x, z, 0.22f)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void updateAir(float dt, MapData map, float throttle, float steerIn) {

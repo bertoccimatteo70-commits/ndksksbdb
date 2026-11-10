@@ -1,5 +1,7 @@
 package it.pta.world;
 
+import com.badlogic.gdx.math.MathUtils;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -579,40 +581,75 @@ public final class MapData {
         return false;
     }
 
-    /** Pushes a circle out of the nearest overlapping building; returns true if moved. */
+    /**
+     * Resolves a circle against every nearby OSM footprint. The closest point is
+     * taken on the polygon edges (not on a vertex), and a few passes are made so
+     * corners and adjacent buildings cannot push the circle into each other.
+     */
     public boolean resolveCollision(float[] pos, float radius) {
         boolean hit = false;
-        int c = cx(pos[0]), r = cz(pos[2]);
-        for (int rr = r - 1; rr <= r + 1; rr++) {
-            for (int cc = c - 1; cc <= c + 1; cc++) {
-                for (int idx : buildingsIn(cc, rr)) {
-                    Building b = building(idx);
-                    if (!b.collides) {
-                        continue;
-                    }
-                    if (pos[0] < b.minX - radius || pos[0] > b.maxX + radius
-                            || pos[2] < b.minZ - radius || pos[2] > b.maxZ + radius) {
-                        continue;
-                    }
-                    int[] nearest = b.nearestPoint(pos[0], pos[2]);
-                    float dx = pos[0] - b.polyX(nearest[0]);
-                    float dz = pos[2] - b.polyZ(nearest[0]);
-                    float d = (float) Math.sqrt(dx * dx + dz * dz);
-                    if (d < radius) {
-                        if (d < 1e-4f) {
-                            dx = 1;
-                            dz = 0;
-                            d = 1;
+        float[] edge = new float[4];
+        for (int pass = 0; pass < 4; pass++) {
+            boolean moved = false;
+            int c = cx(pos[0]), r = cz(pos[2]);
+            for (int rr = r - 1; rr <= r + 1; rr++) {
+                for (int cc = c - 1; cc <= c + 1; cc++) {
+                    for (int idx : buildingsIn(cc, rr)) {
+                        Building b = building(idx);
+                        if (!b.collides) {
+                            continue;
                         }
-                        float push = (radius - d) + 0.01f;
-                        pos[0] += dx / d * push;
-                        pos[2] += dz / d * push;
+                        if (pos[0] < b.minX - radius || pos[0] > b.maxX + radius
+                                || pos[2] < b.minZ - radius || pos[2] > b.maxZ + radius) {
+                            continue;
+                        }
+                        float d = b.nearestBoundary(pos[0], pos[2], edge);
+                        boolean inside = b.contains(pos[0], pos[2]);
+                        if (!inside && d >= radius) {
+                            continue;
+                        }
+                        // For an outside circle, the vector from edge to centre is
+                        // already outward. For an inside point use the polygon edge
+                        // normal, which also works for concave footprints.
+                        float nx = edge[2], nz = edge[3];
+                        if (!inside && d > 1e-4f) {
+                            float ox = pos[0] - edge[0];
+                            float oz = pos[2] - edge[1];
+                            float ol = (float) Math.sqrt(ox * ox + oz * oz);
+                            if (ol > 1e-4f) {
+                                nx = ox / ol;
+                                nz = oz / ol;
+                            }
+                        }
+                        float push = radius + 0.025f;
+                        pos[0] = edge[0] + nx * push;
+                        pos[2] = edge[1] + nz * push;
+                        moved = true;
                         hit = true;
                     }
                 }
             }
+            if (!moved) {
+                break;
+            }
         }
         return hit;
+    }
+
+    /** First solid footprint containing the point; used to locate a real doorway. */
+    public Building buildingAt(float x, float z) {
+        int c = cx(x), r = cz(z);
+        for (int rr = r - 1; rr <= r + 1; rr++) {
+            for (int cc = c - 1; cc <= c + 1; cc++) {
+                for (int idx : buildingsIn(cc, rr)) {
+                    Building b = building(idx);
+                    if (b.collides && b.contains(x, z)) {
+                        return b;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     public Area areaAt(float x, float z) {
@@ -711,6 +748,8 @@ public final class MapData {
         public final float minX, minZ, maxX, maxZ;
         public final float radius;
         public final float area;
+        /** Signed winding: positive means CCW in map X/Z coordinates. */
+        public final float signedArea;
         public final boolean collides;
 
         Building(float[] pts, float height, int facade, int roof, int nameIdx,
@@ -740,7 +779,8 @@ public final class MapData {
             maxZ = mxz;
             radius = 0.5f * (float) Math.hypot(mxx - mnx, mxz - mnz);
             collides = radius > 0.6f;
-            area = Math.abs(ringArea(pts));
+            signedArea = ringArea(pts);
+            area = Math.abs(signedArea);
         }
 
         public int vertexCount() {
@@ -759,32 +799,52 @@ public final class MapData {
             if (x > minX && x < maxX && z > minZ && z < maxZ && contains(x, z)) {
                 return 0;
             }
-            int[] np = nearestPoint(x, z);
-            return (float) Math.hypot(x - polyX(np[0]), z - polyZ(np[0]));
+            return nearestBoundary(x, z, null);
         }
 
         public boolean contains(float x, float z) {
             return pointInRing(pts, x, z);
         }
 
-        /** Returns index of the closest polygon vertex (good enough for push-out). */
-        public int[] nearestPoint(float x, float z) {
-            int best = 0;
-            float bd = Float.MAX_VALUE;
+        /**
+         * Distance from (x,z) to the closest polygon edge, not the closest vertex.
+         * When {@code out} is supplied it receives edge point x,z and the outward
+         * edge normal x,z. This is what makes long walls solid between corners.
+         */
+        public float nearestBoundary(float x, float z, float[] out) {
             int n = vertexCount();
-            for (int i = 0; i < n; i++) {
-                float dx = x - polyX(i), dz = z - polyZ(i);
-                float d = dx * dx + dz * dz;
-                if (d < bd) {
-                    bd = d;
-                    best = i;
+            float best = Float.MAX_VALUE;
+            float bx = x, bz = z, bnx = 1f, bnz = 0f;
+            for (int i = 0, j = n - 1; i < n; j = i++) {
+                float ax = polyX(j), az = polyZ(j);
+                float ex = polyX(i) - ax, ez = polyZ(i) - az;
+                float el2 = ex * ex + ez * ez;
+                float t = el2 > 1e-12f
+                        ? ((x - ax) * ex + (z - az) * ez) / el2 : 0f;
+                t = MathUtils.clamp(t, 0f, 1f);
+                float qx = ax + ex * t, qz = az + ez * t;
+                float dx = x - qx, dz = z - qz;
+                float d2 = dx * dx + dz * dz;
+                if (d2 < best) {
+                    best = d2;
+                    bx = qx;
+                    bz = qz;
+                    float el = (float) Math.sqrt(el2);
+                    if (el > 1e-6f) {
+                        // CCW polygon: outward is right of the directed edge.
+                        bnx = signedArea >= 0f ? ez / el : -ez / el;
+                        bnz = signedArea >= 0f ? -ex / el : ex / el;
+                    }
                 }
             }
-            ret[0] = best;
-            return ret;
+            if (out != null) {
+                out[0] = bx;
+                out[1] = bz;
+                out[2] = bnx;
+                out[3] = bnz;
+            }
+            return (float) Math.sqrt(best);
         }
-
-        private final int[] ret = new int[1];
     }
 
     public static final class RoadWay {

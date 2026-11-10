@@ -73,16 +73,16 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          VERSION="1.0.4"
+          VERSION="1.0.5"
           TAG="v${VERSION}"
           APK="PTA-${VERSION}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
-          NOTES="World design overhaul: facciate, finestre, balconi, ingressi e tetti vari; segnaletica stradale, attraversamenti e arredo; quattro specie arboree e tre stili di lampione; materiali procedurali rifiniti; LOD 0/1/2 con silhouette completa e tutti i 71.844 edifici OSM. Include spawn sicuro e fallback camera corretto al caricamento dei salvataggi. APK debug installabile: arm64-v8a, armeabi-v7a, x86_64."
+          NOTES="Road and collision overhaul: asphalt with shoulders, kerbs, sidewalks and readable markings at LOD 0/1/2; exact polygon-edge collision with iterative push-out; substepped player and full-footprint vehicle sweeps; safe interior exits and street-door entry; road-graph GPS drawn on the asphalt with an explicit no-route state; nearest-first chunk streaming. All 71.844 buildings, 26.296 roads, 17.679 drivable elements, areas, POIs and 70 interiors are preserved. Includes 20 JVM tests. APK debug installable: arm64-v8a, armeabi-v7a, x86_64."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber
           else
             gh release create "$TAG" "$APK" \
-              --title "PTA 1.0.4 - world design overhaul" \
+              --title "PTA 1.0.5 - solid city and road GPS" \
               --target "$GITHUB_SHA" \
               --notes "$NOTES"
           fi
