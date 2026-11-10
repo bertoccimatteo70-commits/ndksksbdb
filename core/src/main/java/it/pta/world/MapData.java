@@ -161,7 +161,7 @@ public final class MapData {
             b.getFloat(); // height
             b.get(); // facade
             b.get(); // roof
-            b.getShort(); // reserved
+            b.getShort(); // architectural family and roof silhouette
             b.getInt(); // name index
             float sx = 0, sz = 0;
             float mnx = Float.MAX_VALUE, mnz = Float.MAX_VALUE;
@@ -414,14 +414,14 @@ public final class MapData {
         float h = b.getFloat();
         int fac = b.get() & 0xFF;
         int roof = b.get() & 0xFF;
-        b.getShort();
+        int style = b.getShort() & 0xFFFF;
         int nameIdx = b.getInt();
         float[] pts = new float[nv * 2];
         for (int v = 0; v < nv; v++) {
             pts[v * 2] = b.getFloat();
             pts[v * 2 + 1] = b.getFloat();
         }
-        return new Building(pts, h, fac, roof, nameIdx);
+        return new Building(pts, h, fac, roof, nameIdx, style & 0xFF, (style >> 8) & 0x0F);
     }
 
     private RoadWay readRoad(int idx) {
@@ -686,9 +686,26 @@ public final class MapData {
     // ---------------------------------------------------------------- data model
 
     public static final class Building {
+        public static final int HISTORIC = 0;
+        public static final int PALAZZO = 1;
+        public static final int VILLA = 2;
+        public static final int MODERN = 3;
+        public static final int SHOP = 4;
+        public static final int COMMERCIAL = 5;
+        public static final int INDUSTRIAL = 6;
+        public static final int PUBLIC = 7;
+        public static final int RURAL = 8;
+
+        public static final int ROOF_FLAT = 0;
+        public static final int ROOF_GABLE = 1;
+        public static final int ROOF_HIPPED = 2;
+        public static final int ROOF_SHED = 3;
+        public static final int ROOF_PYRAMID = 4;
+
         public final float[] pts;
         public final float height;
         public final int facade, roof;
+        public final int type, roofType;
         public final int nameIdx;
         public final float cx, cz;
         public final float minX, minZ, maxX, maxZ;
@@ -696,11 +713,14 @@ public final class MapData {
         public final float area;
         public final boolean collides;
 
-        Building(float[] pts, float height, int facade, int roof, int nameIdx) {
+        Building(float[] pts, float height, int facade, int roof, int nameIdx,
+                 int type, int roofType) {
             this.pts = pts;
             this.height = height;
             this.facade = facade;
             this.roof = roof;
+            this.type = type;
+            this.roofType = roofType;
             this.nameIdx = nameIdx;
             float sx = 0, sz = 0, mnx = 1e9f, mnz = 1e9f, mxx = -1e9f, mxz = -1e9f;
             int n = pts.length / 2;

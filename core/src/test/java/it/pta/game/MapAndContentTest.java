@@ -61,6 +61,28 @@ public class MapAndContentTest {
     }
 
     @Test
+    public void architecturalFamiliesAndRoofsSurviveTheMapBake() {
+        FileHandle f = asset("map/pta_map.bin");
+        MapData map = MapData.open(f.file());
+        JsonValue meta = new JsonReader().parse(asset("map/pta_map.json").readString("UTF-8"));
+        JsonValue styles = meta.get("buildingStyles");
+        assertNotNull("building style distribution", styles);
+        assertTrue("historic centre buildings", styles.getInt("historic") > 500);
+        assertTrue("palazzi", styles.getInt("palazzo") > 10000);
+        assertTrue("villas", styles.getInt("villa") > 5000);
+        assertTrue("industrial buildings", styles.getInt("industrial") > 200);
+        assertTrue("rural buildings", styles.getInt("rural") > 200);
+        int checked = 0;
+        for (int id : map.buildingsIn(0, 0)) {
+            MapData.Building b = map.building(id);
+            assertTrue("valid architectural family", b.type >= 0 && b.type <= 8);
+            assertTrue("valid roof silhouette", b.roofType >= 0 && b.roofType <= 4);
+            checked++;
+        }
+        assertTrue("central chunk has buildings", checked > 0);
+    }
+
+    @Test
     public void everyOsmBuildingIsStillIndexed() {
         MapData map = MapData.open(asset("map/pta_map.bin").file());
         boolean[] seen = new boolean[map.buildingCount];

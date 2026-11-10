@@ -92,6 +92,100 @@ ROOF_COLORS = [
     (168, 84, 58), (150, 72, 50), (183, 98, 66), (128, 66, 51),
     (140, 134, 126), (108, 104, 98), (156, 92, 66), (120, 118, 112),
 ]
+
+# Building families are packed into the formerly reserved u16 of each building
+# record. Geometry and coordinates are untouched; only the renderer's vocabulary
+# becomes richer. Keep these values in sync with MapData.Building.
+BT_HISTORIC, BT_PALAZZO, BT_VILLA, BT_MODERN, BT_SHOP = 0, 1, 2, 3, 4
+BT_COMMERCIAL, BT_INDUSTRIAL, BT_PUBLIC, BT_RURAL = 5, 6, 7, 8
+RT_FLAT, RT_GABLE, RT_HIPPED, RT_SHED, RT_PYRAMID = 0, 1, 2, 3, 4
+BUILDING_STYLE_NAMES = [
+    "historic", "palazzo", "villa", "modern", "shop",
+    "commercial", "industrial", "public", "rural",
+]
+
+
+def classify_building(tags, x, z, height, area):
+    """Derive a readable architectural family from OSM tags and real geometry.
+
+    Pistoia's historic centre is tiny compared with the province: being inside the
+    first ~520 m of the Duomo is used only as a fallback for untagged buildings.
+    Explicit OSM tags always win, so shops, schools and warehouses keep their use.
+    """
+    b = str(tags.get("building", "")).lower()
+    amenity = str(tags.get("amenity", "")).lower()
+    tourism = str(tags.get("tourism", "")).lower()
+    dist = math.hypot(x, z)
+    central = dist < 520.0
+
+    industrial = b in ("industrial", "warehouse", "factory", "manufacture",
+                       "hangar", "works", "depot") or tags.get("man_made") in (
+        "works", "factory") or tags.get("industrial") is not None
+    rural = b in ("barn", "farm", "farm_auxiliary", "farmhouse", "stable",
+                 "greenhouse", "silo", "cowshed", "sty", "cabin") or \
+        tags.get("landuse") == "farmyard"
+    historic = b in ("church", "cathedral", "chapel", "monastery", "abbey",
+                     "castle", "fort", "tower", "city_gate", "ruins", "monument",
+                     "historical", "palace") or \
+        tags.get("historic") is not None or tags.get("heritage") is not None or \
+        amenity == "place_of_worship" or tourism in ("attraction", "museum")
+    public = b in ("public", "civic", "government", "school", "university",
+                   "college", "hospital", "train_station") or amenity in (
+        "school", "university", "college", "kindergarten", "hospital", "clinic",
+        "townhall", "courthouse", "police", "fire_station", "post_office",
+        "library", "theatre", "museum") or tags.get("office") == "government"
+    shop = b in ("retail", "supermarket", "kiosk") or tags.get("shop") is not None or \
+        amenity in ("marketplace", "fuel", "restaurant", "bar", "cafe", "bank")
+    commercial = b in ("commercial", "office", "hotel") or tags.get("office") is not None
+
+    if industrial:
+        kind = BT_INDUSTRIAL
+    elif rural:
+        kind = BT_RURAL
+    elif historic:
+        kind = BT_HISTORIC
+    elif public:
+        kind = BT_PUBLIC
+    elif shop:
+        kind = BT_SHOP
+    elif commercial:
+        kind = BT_COMMERCIAL
+    elif b in ("apartments", "residential", "dormitory", "terrace"):
+        kind = BT_MODERN if height >= 19.0 and area >= 260.0 else BT_PALAZZO
+    elif b in ("house", "detached", "villa", "bungalow", "semi",
+               "semi-detached", "farmhouse"):
+        kind = BT_VILLA
+    elif central and height <= 16.0 and area <= 900.0:
+        kind = BT_HISTORIC
+    elif height >= 16.0 and area >= 220.0:
+        kind = BT_MODERN
+    elif height >= 11.0:
+        kind = BT_PALAZZO
+    elif area >= 900.0:
+        kind = BT_COMMERCIAL
+    elif area <= 130.0 and height <= 10.0:
+        kind = BT_VILLA
+    else:
+        kind = BT_HISTORIC if central else BT_PALAZZO
+
+    shape = str(tags.get("roof:shape", "")).lower()
+    if shape in ("flat", "no", "skillion") or kind in (BT_MODERN, BT_COMMERCIAL,
+                                                         BT_INDUSTRIAL):
+        roof = RT_FLAT if shape not in ("skillion", "shed") else RT_SHED
+    elif shape in ("gabled", "gable", "gambrel", "mansard", "saltbox"):
+        roof = RT_GABLE
+    elif shape in ("hipped", "hip", "half-hipped"):
+        roof = RT_HIPPED
+    elif shape in ("pyramidal", "pyramid", "conical", "dome"):
+        roof = RT_PYRAMID
+    elif kind == BT_RURAL:
+        roof = RT_GABLE
+    elif kind in (BT_HISTORIC, BT_PUBLIC, BT_PALAZZO, BT_VILLA):
+        roof = RT_HIPPED if area >= 360.0 else RT_GABLE
+    else:
+        roof = RT_FLAT
+    return kind, roof
+
 AREA_KIND_NAMES = {
     0: "other", 1: "residential", 2: "commercial", 3: "industrial", 4: "farmland",
     5: "grass", 6: "forest", 7: "park", 8: "pitch", 9: "cemetery", 10: "quarry",
@@ -315,8 +409,12 @@ def main():
                 seed = (nid * 2654435761) & 0xFFFFFFFF
                 fac = FACADE_COLORS[seed % len(FACADE_COLORS)]
                 roof = ROOF_COLORS[(seed >> 7) % len(ROOF_COLORS)]
+                bx = sum(p[0] for p in pts) / len(pts)
+                bz = sum(p[1] for p in pts) / len(pts)
+                kind, roof_shape = classify_building(tags, bx, bz, hgt, area)
                 buildings.append(dict(
-                    pts=pts, h=hgt, fac=fac, roof=roof,
+                    pts=pts, h=hgt, fac=fac, roof=roof, kind=kind,
+                    roofshape=roof_shape,
                     name=name_id(tags.get("name")) if (tags.get("name") and
                                                       (tags.get("tourism") or tags.get("historic") or
                                                        tags.get("amenity") in ("townhall", "place_of_worship", "museum", "library")))
@@ -443,7 +541,9 @@ def main():
         out.f32(b["h"])
         out.u8(FACADE_COLORS.index(b["fac"]))
         out.u8(ROOF_COLORS.index(b["roof"]))
-        out.u16(0)
+        # low byte: architectural family, high nibble: roof silhouette. The
+        # coordinates above are never changed by this metadata.
+        out.u16((b["kind"] & 0xFF) | ((b["roofshape"] & 0x0F) << 8))
         out.i32(b["name"])
         for (x, z) in b["pts"]:
             out.f32(x)
@@ -501,12 +601,19 @@ def main():
             attribution="Map data (c) OpenStreetMap contributors, ODbL 1.0",
             towns=towns, landmarks=landmarks), f, indent=1)
     print("landmarks: %d -> %s" % (len(landmarks), OUT_LANDMARKS), flush=True)
+    style_counts = {}
+    for b in buildings:
+        nm = BUILDING_STYLE_NAMES[b["kind"]]
+        style_counts[nm] = style_counts.get(nm, 0) + 1
+    for nm in BUILDING_STYLE_NAMES:
+        style_counts.setdefault(nm, 0)
     meta = dict(
         version=1, origin=dict(lat=LAT0, lon=LON0),
         bounds=dict(minX=minx, minZ=minz, maxX=maxx, maxZ=maxz),
         chunkSize=CHUNK,
         counts=dict(buildings=len(buildings), roads=len(roads), areas=len(areas),
                     pois=len(pois), names=len(name_list)),
+        buildingStyles=style_counts,
         elevation=dem_meta,
         attribution="Map data (c) OpenStreetMap contributors, ODbL 1.0 - https://www.openstreetmap.org/copyright",
         projection="Local tangent plane, metres, +X east, +Z south, origin Piazza del Duomo",

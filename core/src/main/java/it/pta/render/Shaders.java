@@ -41,11 +41,11 @@ public final class Shaders {
             + "varying vec3 v_world;\n"
             + "void main() {\n"
             + "  float tile = floor(v_color.a + 0.5);\n"
-            + "  float col = mod(tile, 3.0);\n"
-            + "  float row = floor(tile / 3.0);\n"
+            + "  float col = mod(tile, 4.0);\n"
+            + "  float row = floor(tile / 4.0);\n"
             + "  vec2 uv = fract(v_uv);\n"
-            + "  uv = clamp(uv, 0.012, 0.988);\n"
-            + "  vec2 auv = vec2((col + uv.x) / 3.0, (2.0 - row + uv.y) / 3.0);\n"
+            + "  uv = clamp(uv, 0.004, 0.996);\n"
+            + "  vec2 auv = vec2((col + uv.x) / 4.0, (3.0 - row + uv.y) / 4.0);\n"
             + "  vec4 tex = texture2D(u_tex, auv);\n"
             // Some GLES drivers return a black sample for an atlas that is fine
             // elsewhere. Fall back to per-vertex material colours instead of
@@ -67,6 +67,14 @@ public final class Shaders {
             + "      material *= 0.72 + 0.28 * fract(v_uv.x * 2.0 + v_uv.y);\n"
             + "    }\n"
             + "  }\n"
+            // Stone paving gets readable joints at street level even when the
+            // atlas texture is minified; the joints are keyed to world metres so
+            // they remain continuous across terrain quads.
+            + "  if (tile > 14.5 && tile < 15.5) {\n"
+            + "    vec2 stone = abs(fract(v_world.xz * 0.36) - 0.5);\n"
+            + "    float joint = smoothstep(0.43, 0.48, max(stone.x, stone.y));\n"
+            + "    material *= 1.0 - 0.20 * joint;\n"
+            + "  }\n"
             + "  vec3 tint = u_tint.rgb;\n"
             + "  if (dot(tint, vec3(1.0)) < 0.01) { tint = vec3(1.0); }\n"
             + "  vec3 base = material * v_color.rgb * tint;\n"
@@ -76,7 +84,7 @@ public final class Shaders {
             + "  vec3 light = u_ambient * hemi + u_sunColor * ndl;\n"
             // GLES drivers and early-morning shadows can leave a facade almost
             // black. Keep a cool sky fill so every wall stays readable.
-            + "  vec3 minLight = mix(vec3(0.34, 0.37, 0.42), vec3(0.06, 0.08, 0.12), u_night);\n"
+            + "  vec3 minLight = mix(vec3(0.46, 0.49, 0.54), vec3(0.08, 0.10, 0.15), u_night);\n"
             + "  light = max(light, minLight);\n"
             + "  if (dot(light, vec3(1.0)) < 0.08) { light = vec3(0.72, 0.76, 0.82); }\n"
             + "  vec3 lit = base * light;\n"
@@ -84,7 +92,15 @@ public final class Shaders {
             + "  vec3 hv = normalize(u_sunDir + viewDir);\n"
             + "  float spec = pow(max(dot(n, hv), 0.0), 40.0) * 0.14;\n"
             + "  lit += u_sunColor * spec;\n"
+            + "  float windowGlow = (tile > 12.5 && tile < 13.5) ? 1.0 : 0.0;\n"
+            // Glass is not a black hole: give it a cool sky reflection in daylight
+            // and a warm interior glow at night. The old texture-only path was
+            // almost invisible on shaded facades.
+            + "  vec3 dayGlass = vec3(0.30, 0.39, 0.47) * (0.78 + 0.22 * ndl);\n"
+            + "  vec3 nightGlass = vec3(1.0, 0.67, 0.34);\n"
+            + "  lit = mix(lit, mix(dayGlass, nightGlass, u_night), windowGlow);\n"
             + "  lit += base * tex.a * u_night * vec3(1.15, 0.92, 0.62);\n"
+            + "  lit += vec3(1.0, 0.67, 0.34) * windowGlow * pow(u_night, 1.45) * 0.38;\n"
             + "  float d = length(u_camPos - v_world);\n"
             + "  float fog = clamp((d - u_fogStart) / max(1.0, u_fogEnd - u_fogStart), 0.0, 1.0);\n"
             + "  gl_FragColor = vec4(mix(lit, u_fogColor, fog), 1.0);\n"

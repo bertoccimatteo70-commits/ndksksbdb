@@ -1180,7 +1180,8 @@ public final class World implements PoliceSystem.PoliceHost {
             pl.indoor = false;
             pl.vehicle = null;
         }
-        p.setPosition(d.x, d.z, map);
+        float[] safe = safeSpawn(d.x, d.z);
+        p.setPosition(safe[0], safe[1], map);
         p.health = d.health;
         p.armor = d.armor;
         economy.cash = d.cash;

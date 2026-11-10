@@ -9,11 +9,12 @@ Motore: **libGDX 1.12.1 + renderer OpenGL ES 2.0 proprietario** (Java 17).
 Nessun asset di terze parti, nessun marchio, nessuna musica protetta: texture, modelli,
 personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 
-> **Release corrente:** [PTA 1.0.3 — mondo di Pistoia verificato](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/tag/v1.0.3) · [Scarica PTA-1.0.3.apk](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/download/v1.0.3/PTA-1.0.3.apk) (9,0 MB)
+> **Release corrente:** [PTA 1.0.4 — world design overhaul](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/tag/v1.0.4) · [Scarica PTA-1.0.4.apk](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/download/v1.0.4/PTA-1.0.4.apk) (8,4 MB)
 >
-> La Release 1.0.3 include lo spawn verificato nella Piazza del Duomo, il rendering
-> senza mondo nero e le correzioni di telecamera. APK debug installabile per
-> arm64-v8a, armeabi-v7a e x86_64.
+> La Release 1.0.4 include l'overhaul architettonico e urbano: facciate e tetti
+> differenziati, ingressi e ringhiere, segnaletica e attraversamenti, arredo e
+> vegetazione vari, materiali procedurali rifiniti e LOD con silhouette preservata.
+> APK debug installabile per arm64-v8a, armeabi-v7a e x86_64.
 
 ---
 
@@ -56,9 +57,9 @@ e le performance reali restano da fare: vedi [Limiti noti](#limiti-noti).
 | RAM consigliata | 3 GB, con preset MEDIA |
 | GPU | OpenGL ES 2.0 |
 | Connessione | non richiesta dopo l'installazione |
-| Spazio | APK 9,0 MB; circa 7,7 MB di mappa copiati nello storage interno al primo avvio |
+| Spazio | APK 8,4 MB; circa 7,7 MB di mappa copiati nello storage interno al primo avvio |
 
-La Release `1.0.3` contiene un **APK debug** firmato con la chiave debug, pensato per
+La Release `1.0.4` contiene un **APK debug** firmato con la chiave debug, pensato per
 l'installazione diretta e il collaudo. Per la distribuzione sugli store serve una
 build release firmata.
 

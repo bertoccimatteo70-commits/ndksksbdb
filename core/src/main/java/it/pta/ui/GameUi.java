@@ -944,7 +944,7 @@ public final class GameUi {
                 + "per questo progetto. Nessun asset di terze parti o marchio registrato.\n\n"
                 + "Personaggi: Marco Bellandi, Elisa Vannucci.\n"
                 + "Ambientazione: provincia di Pistoia, Toscana.\n\n"
-                + "Versione 1.0 — campagna in 5 capitoli, 12 missioni principali + 2 secondarie.";
+                + "Versione 1.0.4 — campagna in 5 capitoli, 12 missioni principali + 2 secondarie.";
         Label label = new Label(text, a.skin, "small");
         label.setWrap(true);
         label.setAlignment(Align.center);

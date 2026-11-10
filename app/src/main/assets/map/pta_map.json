@@ -18,6 +18,17 @@
     "pois": 2321,
     "names": 3876
   },
+  "buildingStyles": {
+    "public": 225,
+    "historic": 1469,
+    "commercial": 1287,
+    "palazzo": 40605,
+    "villa": 24014,
+    "modern": 39,
+    "shop": 158,
+    "rural": 2627,
+    "industrial": 1420
+  },
   "elevation": {
     "cols": 490,
     "rows": 261,

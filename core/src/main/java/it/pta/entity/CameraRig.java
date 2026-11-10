@@ -84,7 +84,9 @@ public final class CameraRig {
                 }
             }
             if (!found) {
-                offset.set(0f, 1.8f, 0f);
+                // Never place the camera exactly above the target: the view direction
+                // would be parallel to the up vector and the view matrix singular.
+                offset.set(0f, 2.2f, -1.2f);
             }
         }
         camera.position.set(target.x + offset.x, target.y + offset.y, target.z + offset.z);

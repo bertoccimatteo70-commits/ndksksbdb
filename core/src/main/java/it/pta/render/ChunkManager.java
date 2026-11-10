@@ -96,14 +96,21 @@ public final class ChunkManager implements Disposable {
         queued = building.size();
         for (int r = cz - radiusChunks; r <= cz + radiusChunks; r++) {
             for (int c = cx - radiusChunks; c <= cx + radiusChunks; c++) {
-                float ccx = (c + 0.5f) * map.chunkSize;
-                float ccz = (r + 0.5f) * map.chunkSize;
-                float dx = ccx - pos.x, dz = ccz - pos.z;
-                float dist = (float) Math.sqrt(dx * dx + dz * dz) - 360f;
-                if (dist > viewDistance) {
+                // Distance to the chunk rectangle, not to its centre: a player
+                // standing near a chunk border must not see a coarse facade on the
+                // other side of that border just because the chunk centre is far.
+                float minX = c * map.chunkSize, maxX = minX + map.chunkSize;
+                float minZ = r * map.chunkSize, maxZ = minZ + map.chunkSize;
+                float nearestX = Math.max(minX, Math.min(pos.x, maxX));
+                float nearestZ = Math.max(minZ, Math.min(pos.z, maxZ));
+                float dx = nearestX - pos.x, dz = nearestZ - pos.z;
+                float dist = (float) Math.sqrt(dx * dx + dz * dz);
+                if (dist > viewDistance + 180f) {
                     continue;
                 }
-                int lod = dist < 430f ? 0 : (dist < 950f ? 1 : 2);
+                // Full facades follow the real visible edge; the middle band keeps
+                // roofs/windows and the rest is a cheap box.
+                int lod = dist < 240f ? 0 : (dist < 760f ? 1 : 2);
                 long k = key(c, r);
                 Chunk existing = chunks.get(k);
                 if (existing != null) {

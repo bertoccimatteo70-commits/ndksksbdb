@@ -33,6 +33,8 @@ public final class WorldRenderer implements Disposable {
     private final Mesh skyQuad;
     private final Matrix4 invProjView = new Matrix4();
     private final Matrix4 tmp = new Matrix4();
+    private final com.badlogic.gdx.utils.FloatArray glowScratch =
+            new com.badlogic.gdx.utils.FloatArray();
 
     private FrameBuffer fbo;
     private int screenW, screenH;
@@ -241,6 +243,17 @@ public final class WorldRenderer implements Disposable {
     }
 
     public void finishFrame(Camera camera) {
+        // Lamp and shop-window glows are baked as positions in the chunk data. They
+        // are only submitted at night and capped so the additive pass stays cheap.
+        if (sun.night > 0.10f) {
+            glowScratch.clear();
+            chunks.collectGlows(camera.position, 230f, glowScratch);
+            int n = Math.min(glowScratch.size / 3, 140);
+            for (int i = 0; i < n; i++) {
+                fx.addGlow(glowScratch.get(i * 3), glowScratch.get(i * 3 + 1),
+                        glowScratch.get(i * 3 + 2), 2.3f, 1.0f, 0.76f, 0.44f);
+            }
+        }
         fx.render(camera, 0.34f);
         fx.renderGlows(camera, 1f);
 
