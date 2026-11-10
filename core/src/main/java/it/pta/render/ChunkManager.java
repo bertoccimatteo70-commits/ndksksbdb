@@ -134,7 +134,8 @@ public final class ChunkManager implements Disposable {
                     if (existing.geometry != null && existing.parts != null
                             && existing.lod != lod && !building.contains(k)) {
                         // LOD changed: rebuild sharper when approaching, cheaper when leaving.
-                        existing.lod = lod;
+                        // Do not update existing.lod here: the request must still look
+                        // different from the old mesh when it is scheduled below.
                         requests.add(new Request(c, r, lod, k, dist));
                     }
                     continue;
