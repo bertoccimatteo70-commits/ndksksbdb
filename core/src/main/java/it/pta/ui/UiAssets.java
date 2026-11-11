@@ -23,6 +23,9 @@ public final class UiAssets implements Disposable {
     public final Texture white;
     public final TextureRegion whiteRegion;
     public final Texture circle;
+    /** Filled triangle pointing up, used for the rotating player marker on the map. */
+    public final Texture triangle;
+    public final TextureRegion triangleRegion;
     public final Texture panel;
     public final Texture bar;
     public final Texture buttonUp;
@@ -46,6 +49,8 @@ public final class UiAssets implements Disposable {
         white = solid();
         whiteRegion = new TextureRegion(white);
         circle = circleTexture(128);
+        triangle = triangleTexture(64);
+        triangleRegion = new TextureRegion(triangle);
         panel = panelTexture(96);
         bar = barTexture(8, 64);
         buttonUp = buttonTexture(96, new Color(0.13f, 0.18f, 0.26f, 0.96f),
@@ -143,6 +148,27 @@ public final class UiAssets implements Disposable {
                     pm.setColor(1f, 1f, 1f, a);
                     pm.drawPixel(x, y);
                 }
+            }
+        }
+        Texture t = new Texture(pm);
+        t.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        pm.dispose();
+        return t;
+    }
+
+    /** Filled triangle pointing up: the map player marker rotates this texture. */
+    private Texture triangleTexture(int size) {
+        Pixmap pm = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        pm.setColor(0, 0, 0, 0);
+        pm.fill();
+        int cy = size / 2;
+        for (int y = 0; y < size; y++) {
+            // Narrow at the top, wide at the bottom: the texture points up.
+            float t = (float) y / Math.max(1, size - 1);
+            int half = Math.round((cy - 1) * t);
+            for (int x = cy - half; x <= cy + half; x++) {
+                pm.setColor(1f, 1f, 1f, 1f);
+                pm.drawPixel(Math.max(0, Math.min(size - 1, x)), y);
             }
         }
         Texture t = new Texture(pm);
@@ -264,6 +290,7 @@ public final class UiAssets implements Disposable {
         huge.dispose();
         white.dispose();
         circle.dispose();
+        triangle.dispose();
         panel.dispose();
         bar.dispose();
         buttonUp.dispose();

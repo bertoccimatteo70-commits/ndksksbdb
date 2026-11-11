@@ -100,6 +100,36 @@ di firma, `versionCode` sempre crescente (Android rifiuta i downgrade con
 `assembleDebug` usa la chiave debug e **non** aggiorna l'installazione della release:
 installa `PTA-x.y.z.apk` della release oppure compila `assembleRelease`.
 
+### Mondo in streaming, GPS, mappa e NPC
+
+- Il database geografico completo (71.844 edifici, 26.296 strade, 17.679 elementi
+  carrabili, 4.785 aree, 2.321 POI, 70 interni) resta su disco in `pta_map.bin`.
+  `MapData` decodifica solo i chunk toccati, con cache limitate (16 chunk di
+  edifici, 1.024 strade, 512 aree).
+- `ChunkManager` costruisce le mesh su due thread worker e le carica sulla GPU solo
+  nel thread di rendering. I chunk in costruzione stanno in un set concorrente, le
+  richieste sono ordinate per distanza meno un bonus direzionale (caricamento
+  predittivo verso la telecamera), il LOD 0/1/2 ha isteresi di 45 m e un budget di
+  260 chunk / 96 MB di vertici con sfratto LRU; oltre il raggio attivo nulla viene
+  disegnato (LOD 3) ma i dati restano disponibili.
+- `RoadRouter` costruisce un grafo di giunzioni diretto sui soli sensi di marcia
+  legali (bit 1 = `oneway`, bit 3 = `oneway=-1`), con A* ed euristica euclidea
+  ammissibile. Partenza e destinazione sono proiettate sul segmento stradale e
+  collegate solo agli estremi raggiungibili. Il calcolo gira su un thread dedicato.
+- Il nastro GPS è una mesh miter sul manto stradale, con frecce ogni 55 m e polygon
+  offset contro lo z-fighting; mappa e HUD usano lo stesso array di punti, con
+  distanza residua e prossima svolta. Il ricalcolo scatta su deviazione oltre 22 m,
+  obiettivo spostato o percorso vecchio.
+- La mappa è a schermo intero: Fit to Bounds all'apertura, pinch-to-zoom, pan,
+  pulsanti "Centra su di me" e "Tutta la città", marker triangolare ruotato sulla
+  direzione reale. Legge solo l'indice 2D, mai le mesh 3D.
+- Pedoni e giocatore sono corpi solidi (`NpcCollision`): separazione a cerchi con
+  quote di correzione, pedoni che si scostano, veicoli che frenano e spingono invece
+  di attraversare.
+- Le ambienze `assets/audio/{rain,wind,city}.wav` (5,2 MB, generate da
+  `tools/audio/make_ambience.py`) sono riprodotte come musica in streaming: il peso
+  resta nell'APK, non nella RAM.
+
 ### Versione automatica
 
 `version.properties` è l'unica fonte di `versionCode` e `versionName`;

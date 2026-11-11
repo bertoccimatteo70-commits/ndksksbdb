@@ -365,8 +365,13 @@ def main():
                 if len(coords) > 160:
                     coords = decimate(coords, 160)
                 flags = 0
-                if tags.get("oneway") in ("yes", "true", "1", "-1"):
+                oneway = str(tags.get("oneway", "")).strip().lower()
+                if oneway in ("yes", "true", "1", "-1"):
                     flags |= 1
+                    if oneway == "-1":
+                        # oneway=-1: legal travel runs against the way geometry.
+                        # Bit 3 tells the router and the traffic AI which side it is.
+                        flags |= 8
                 if tags.get("bridge") not in (None, "no"):
                     flags |= 2
                 if tags.get("tunnel") not in (None, "no"):

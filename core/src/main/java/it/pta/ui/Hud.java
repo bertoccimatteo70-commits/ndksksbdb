@@ -120,6 +120,16 @@ public final class Hud extends Actor {
                         ? "GPS stradale · " + (int) (world.gpsDistance / 1000f * 10) / 10f + " km"
                         : "GPS: " + (world.gpsMessage.isEmpty() ? "calcolo percorso" : world.gpsMessage);
                 a.small.draw(batch, gps, px + a.dp(14), py + a.dp(16));
+                if (world.gpsAvailable) {
+                    // Same route as the 3D ribbon: next manoeuvre and its street.
+                    String arrow = world.gpsNextTurnSide > 0 ? "→ destra"
+                            : world.gpsNextTurnSide < 0 ? "← sinistra" : "↑ dritto";
+                    String street = world.gpsNextTurnStreet.isEmpty()
+                            ? "" : " · " + world.gpsNextTurnStreet;
+                    a.small.setColor(0.55f, 0.95f, 1f, 1f);
+                    a.small.draw(batch, arrow + " tra " + (int) world.gpsNextTurnDistance
+                            + " m" + street, px + pw - a.dp(240), py + a.dp(16));
+                }
             }
         }
 

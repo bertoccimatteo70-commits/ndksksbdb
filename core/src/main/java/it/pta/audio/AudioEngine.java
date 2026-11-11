@@ -42,6 +42,8 @@ public final class AudioEngine implements Disposable {
     private float ambientFilter;
     private float sirenPhase;
     private float enginePhase;
+    /** Streamed ambience beds shipped as WAV assets; never decoded into RAM. */
+    private com.badlogic.gdx.audio.Music rainLoop, windLoop, cityLoop;
 
     public AudioEngine() {
         try {
@@ -54,6 +56,7 @@ public final class AudioEngine implements Disposable {
         for (int i = 0; i < tracks.length; i++) {
             tracks[i] = renderTrack(i);
         }
+        loadAmbience();
         if (enabled) {
             running = true;
             mixThread = new Thread(this::mixLoop, "pta-audio");
@@ -331,6 +334,7 @@ public final class AudioEngine implements Disposable {
         sfxGain = sfx;
         ambientGain = ambient;
         dialogueGain = dialogue;
+        applyAmbience();
     }
 
     public void setEngine(boolean on, float load, float rpm) {
@@ -345,10 +349,48 @@ public final class AudioEngine implements Disposable {
 
     public void setRain(float amount) {
         rainAmount = amount;
+        applyAmbience();
     }
 
     public void setIndoors(boolean indoors) {
         this.indoors = indoors;
+        applyAmbience();
+    }
+
+    /**
+     * Opens the three ambience beds as streaming music. libGDX keeps them on disk and
+     * decodes block by block, so shipping several MB of audio does not grow the heap.
+     * A device without an audio output simply logs and keeps the procedural mix.
+     */
+    private void loadAmbience() {
+        try {
+            rainLoop = Gdx.audio.newMusic(Gdx.files.internal("audio/rain.wav"));
+            windLoop = Gdx.audio.newMusic(Gdx.files.internal("audio/wind.wav"));
+            cityLoop = Gdx.audio.newMusic(Gdx.files.internal("audio/city.wav"));
+            for (com.badlogic.gdx.audio.Music m : new com.badlogic.gdx.audio.Music[]{
+                    rainLoop, windLoop, cityLoop}) {
+                m.setLooping(true);
+                m.setVolume(0f);
+                m.play();
+            }
+            applyAmbience();
+            Gdx.app.log("PTA", "ambience: rain, wind and city beds streamed from assets");
+        } catch (Exception e) {
+            Gdx.app.error("PTA", "ambience streams unavailable", e);
+            rainLoop = null;
+            windLoop = null;
+            cityLoop = null;
+        }
+    }
+
+    /** Weather and location drive the beds; music and sfx keep their own gains. */
+    private void applyAmbience() {
+        if (rainLoop == null || !enabled) {
+            return;
+        }
+        rainLoop.setVolume(Math.min(1f, rainAmount * 0.55f * ambientGain));
+        windLoop.setVolume(Math.min(1f, (1f - rainAmount) * 0.18f * ambientGain));
+        cityLoop.setVolume(Math.min(1f, (indoors ? 0.06f : 0.32f) * ambientGain));
     }
 
     public void uiClick() {
@@ -420,6 +462,13 @@ public final class AudioEngine implements Disposable {
                 mixThread.join(400);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
+            }
+        }
+        for (com.badlogic.gdx.audio.Music m : new com.badlogic.gdx.audio.Music[]{
+                rainLoop, windLoop, cityLoop}) {
+            if (m != null) {
+                m.stop();
+                m.dispose();
             }
         }
         if (device != null) {

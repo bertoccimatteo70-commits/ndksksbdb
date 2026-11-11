@@ -891,6 +891,15 @@ public final class MapData {
             return (flags & 1) != 0;
         }
 
+        /**
+         * {@code oneway=-1}: the way is one-way against the order of its points.
+         * Bit 3 is written by tools/map/build_map.py; maps baked before that flag
+         * existed simply report false, which keeps the old bidirectional behaviour.
+         */
+        public boolean oneWayReversed() {
+            return oneWay() && (flags & 8) != 0;
+        }
+
         public boolean bridge() {
             return (flags & 2) != 0;
         }

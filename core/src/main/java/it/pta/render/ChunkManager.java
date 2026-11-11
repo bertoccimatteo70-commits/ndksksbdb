@@ -15,19 +15,32 @@ import it.pta.world.MapData;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Streams the province in 512 m chunks, generating meshes on worker threads and
  * uploading them on the GL thread. Only chunks inside the view distance exist on
  * the GPU, which keeps the game inside Android memory budgets.
+ *
+ * <p>Threading contract: {@link #chunks} and the pending-request set are only touched
+ * on the GL thread. The set of chunks currently being built is a concurrent set,
+ * because a worker removes its key when it finishes while the GL thread reads it to
+ * decide what to schedule and reports it as {@code queued}. The finished queue hands
+ * CPU geometry to the GL thread; meshes are created and disposed there only.</p>
+ *
+ * <p>Chunk requests are ordered by distance minus a forward bonus, so the world in
+ * front of the camera (and ahead of the player's movement, when known) is built
+ * first: that is the predictive part of the streaming. LOD changes use a hysteresis
+ * band so a player walking along a threshold does not rebuild the same chunk every
+ * frame.</p>
  */
 public final class ChunkManager implements Disposable {
     private static final VertexAttribute[] ATTRS = {
@@ -36,6 +49,16 @@ public final class ChunkManager implements Disposable {
             new VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, ShaderProgram.COLOR_ATTRIBUTE),
             new VertexAttribute(VertexAttributes.Usage.TextureCoordinates, 2, ShaderProgram.TEXCOORD_ATTRIBUTE + "0")
     };
+
+    /** Bands of the distance-based LOD, metres. */
+    private static final float LOD0_DIST = 240f;
+    private static final float LOD1_DIST = 760f;
+    /** Hysteresis around each band so LOD borders do not flip every frame. */
+    private static final float LOD_HYSTERESIS = 45f;
+    /** Hard cap on live chunk meshes, whatever the device. */
+    private static final int MAX_LIVE_CHUNKS = 260;
+    /** Hard cap on CPU vertex bytes retained for loaded chunks. */
+    private static final long MAX_VERTEX_BYTES = 96L * 1024 * 1024;
 
     public static final class Chunk {
         public final int cx, cz;
@@ -54,17 +77,26 @@ public final class ChunkManager implements Disposable {
 
     private final MapData map;
     private final Map<Long, Chunk> chunks = new HashMap<>();
-    private final Set<Long> building = new HashSet<>();
+    private final Set<Long> building = ConcurrentHashMap.newKeySet();
     private final ConcurrentLinkedQueue<ChunkGeometry> finished = new ConcurrentLinkedQueue<>();
     private final ExecutorService pool;
     private final Matrix4 identity = new Matrix4();
-    private final Vector3 tmp = new Vector3();
+    private final AtomicInteger buildsStarted = new AtomicInteger();
+    private final AtomicInteger buildsFailed = new AtomicInteger();
 
     private float viewDistance = 900f;
     private long frame;
+    private float focusX, focusZ;
+    private boolean hasFocus;
+    private float lastX, lastZ;
+    private boolean hasLast;
     public int drawnChunks;
     public int triangles;
     public volatile int queued;
+    /** Chunks discarded because they left the streaming radius or the memory budget. */
+    public int evicted;
+    public int maxLiveChunks = MAX_LIVE_CHUNKS;
+    public long maxVertexBytes = MAX_VERTEX_BYTES;
 
     public ChunkManager(MapData map) {
         this.map = map;
@@ -84,6 +116,21 @@ public final class ChunkManager implements Disposable {
         return viewDistance;
     }
 
+    /**
+     * Direction the player is looking or moving in, used to prioritise and to reach a
+     * little further ahead of the camera. Values are normalised here.
+     */
+    public void setFocus(float dx, float dz) {
+        float len = (float) Math.hypot(dx, dz);
+        if (len < 1e-4f) {
+            hasFocus = false;
+            return;
+        }
+        focusX = dx / len;
+        focusZ = dz / len;
+        hasFocus = true;
+    }
+
     private static long key(int cx, int cz) {
         return (((long) cx) << 32) ^ (cz & 0xffffffffL);
     }
@@ -92,19 +139,34 @@ public final class ChunkManager implements Disposable {
         final int cx, cz, lod;
         final long key;
         final float distance;
+        final float score;
 
-        Request(int cx, int cz, int lod, long key, float distance) {
+        Request(int cx, int cz, int lod, long key, float distance, float score) {
             this.cx = cx;
             this.cz = cz;
             this.lod = lod;
             this.key = key;
             this.distance = distance;
+            this.score = score;
         }
     }
 
     public void update(Vector3 pos, float delta) {
         frame++;
         uploadFinished(2);
+        // Movement-derived focus when the caller did not supply one: the streaming
+        // then follows the player's travel direction instead of only the camera.
+        if (!hasFocus && hasLast) {
+            float vx = pos.x - lastX;
+            float vz = pos.z - lastZ;
+            if (vx * vx + vz * vz > 0.04f) {
+                setFocus(vx, vz);
+            }
+        }
+        lastX = pos.x;
+        lastZ = pos.z;
+        hasLast = true;
+
         int cx = map.cx(pos.x);
         int cz = map.cz(pos.z);
         int radiusChunks = (int) Math.ceil((viewDistance + 220f) / map.chunkSize);
@@ -121,62 +183,99 @@ public final class ChunkManager implements Disposable {
                 float nearestZ = Math.max(minZ, Math.min(pos.z, maxZ));
                 float dx = nearestX - pos.x, dz = nearestZ - pos.z;
                 float dist = (float) Math.sqrt(dx * dx + dz * dz);
-                if (dist > viewDistance + 180f) {
+                float forward = 0f;
+                if (hasFocus) {
+                    float len = (float) Math.sqrt(dx * dx + dz * dz);
+                    if (len > 1f) {
+                        forward = (dx / len) * focusX + (dz / len) * focusZ;
+                    }
+                }
+                // The cone in front of the player is loaded earlier than the sides.
+                float reach = viewDistance + 180f + Math.max(0f, forward) * 320f;
+                if (dist > reach) {
                     continue;
                 }
-                // Full facades follow the real visible edge; the middle band keeps
-                // roofs/windows and the rest is a cheap box.
-                int lod = dist < 240f ? 0 : (dist < 760f ? 1 : 2);
                 long k = key(c, r);
                 Chunk existing = chunks.get(k);
+                int lod = lodFor(dist, existing);
                 if (existing != null) {
                     existing.lastUsed = frame;
                     if (existing.geometry != null && existing.parts != null
                             && existing.lod != lod && !building.contains(k)) {
-                        // LOD changed: rebuild sharper when approaching, cheaper when leaving.
-                        // Do not update existing.lod here: the request must still look
-                        // different from the old mesh when it is scheduled below.
-                        requests.add(new Request(c, r, lod, k, dist));
+                        float score = dist - Math.max(0f, forward) * 260f;
+                        requests.add(new Request(c, r, lod, k, dist, score));
                     }
                     continue;
                 }
                 if (!building.contains(k)) {
-                    requests.add(new Request(c, r, lod, k, dist));
+                    float score = dist - Math.max(0f, forward) * 260f;
+                    requests.add(new Request(c, r, lod, k, dist, score));
                 }
             }
         }
-        // The old loop scheduled the far corner of the 7x7 window first. With a
-        // five-job cap that could starve the chunk under the player for a minute,
-        // producing a flat empty world. Always build nearest-first.
-        requests.sort(Comparator.comparingDouble(a -> a.distance));
+        // Nearest-in-view first. The old loop scheduled the far corner of the window
+        // first, which could starve the chunk under the player for a minute.
+        requests.sort(Comparator.comparingDouble(a -> a.score));
         for (Request q : requests) {
             if (building.size() >= 5) {
                 break;
             }
-            if (chunks.containsKey(q.key) && !building.contains(q.key)) {
-                Chunk old = chunks.get(q.key);
-                if (old != null && old.lod == q.lod && old.parts != null) {
-                    continue;
-                }
+            if (building.contains(q.key)) {
+                continue;
             }
-            if (!building.contains(q.key)) {
-                schedule(q.cx, q.cz, q.lod, q.key);
+            Chunk old = chunks.get(q.key);
+            if (old != null && old.lod == q.lod && old.parts != null) {
+                continue;
             }
+            schedule(q.cx, q.cz, q.lod, q.key);
         }
         queued = building.size();
         evict(pos);
     }
 
+    /** LOD for a chunk that is not loaded yet. Pure, so it is unit tested. */
+    public static int lodForDistance(float dist, int currentLod) {
+        return lodFor(dist, null, currentLod);
+    }
+
+    /** LOD with a hysteresis band per current level, to avoid rebuild pop-corner. */
+    private static int lodFor(float dist, Chunk current) {
+        return lodFor(dist, current, current == null ? 0 : current.lod);
+    }
+
+    private static int lodFor(float dist, Chunk current, int currentLod) {
+        if (current != null) {
+            currentLod = current.lod;
+        }
+        if (current == null && currentLod < 0) {
+            return dist < LOD0_DIST ? 0 : (dist < LOD1_DIST ? 1 : 2);
+        }
+        switch (currentLod) {
+            case 0:
+                return dist > LOD0_DIST + LOD_HYSTERESIS ? (dist < LOD1_DIST ? 1 : 2) : 0;
+            case 1:
+                if (dist < LOD0_DIST - LOD_HYSTERESIS) {
+                    return 0;
+                }
+                return dist > LOD1_DIST + LOD_HYSTERESIS ? 2 : 1;
+            default:
+                return dist > LOD1_DIST - LOD_HYSTERESIS ? 2 : (dist < LOD0_DIST ? 0 : 1);
+        }
+    }
+
     private void schedule(int cx, int cz, int lod, long k) {
         building.add(k);
+        buildsStarted.incrementAndGet();
         final int fcx = cx, fcz = cz, flod = lod;
         pool.execute(() -> {
             try {
                 ChunkGeometry g = ChunkBuilder.build(map, fcx, fcz, flod);
                 finished.add(g);
             } catch (Throwable t) {
+                buildsFailed.incrementAndGet();
                 Gdx.app.error("PTA", "chunk build failed " + fcx + "," + fcz, t);
             } finally {
+                // Concurrent set: the GL thread may be reading it right now.
                 building.remove(k);
             }
         });
@@ -224,23 +323,42 @@ public final class ChunkManager implements Disposable {
     }
 
     private void evict(Vector3 pos) {
-        Iterator<Map.Entry<Long, Chunk>> it = chunks.entrySet().iterator();
         List<Chunk> drop = new ArrayList<>();
-        while (it.hasNext()) {
-            Chunk c = it.next().getValue();
+        long bytes = 0;
+        for (Chunk c : chunks.values()) {
             float dist = (float) Math.hypot(c.centerX - pos.x, c.centerZ - pos.z);
             boolean stale = dist > viewDistance + 420f;
             boolean old = frame - c.lastUsed > 90;
-            if (stale) {
+            if (stale || (old && dist > viewDistance + 200f)) {
                 drop.add(c);
-            } else if (old && dist > viewDistance + 200f) {
-                drop.add(c);
+            } else if (c.geometry != null) {
+                bytes += c.geometry.vertexCount() * MeshBuilder.FLOATS_PER_VERTEX * 4L;
+            }
+        }
+        // Budget: farthest chunks go first, but never the 3x3 around the player.
+        if (chunks.size() - drop.size() > maxLiveChunks || bytes > maxVertexBytes) {
+            ArrayList<Chunk> live = new ArrayList<>();
+            for (Chunk c : chunks.values()) {
+                if (!drop.contains(c)) {
+                    live.add(c);
+                }
+            }
+            live.sort((a, b) -> Float.compare(
+                    (float) Math.hypot(b.centerX - pos.x, b.centerZ - pos.z),
+                    (float) Math.hypot(a.centerX - pos.x, a.centerZ - pos.z)));
+            int keep = Math.max(9, Math.min(maxLiveChunks, chunks.size() - drop.size()));
+            for (int i = keep; i < live.size(); i++) {
+                drop.add(live.get(i));
             }
         }
         for (Chunk c : drop) {
             disposeMeshes(c);
             chunks.remove(key(c.cx, c.cz));
+            // Drop the CPU copy too: a chunk that is not rendered must not keep its
+            // vertex arrays and glow positions alive in the Java heap.
+            c.geometry = null;
             map.releaseChunk(c.cx, c.cz);
+            evicted++;
         }
     }
 
@@ -331,6 +449,25 @@ public final class ChunkManager implements Disposable {
         return n;
     }
 
+    public int buildsStarted() {
+        return buildsStarted.get();
+    }
+
+    public int buildsFailed() {
+        return buildsFailed.get();
+    }
+
+    /** One-line diagnostics for the log and the performance report. */
+    public String stats() {
+        return "chunks=" + chunks.size()
+                + " queued=" + building.size()
+                + " drawn=" + drawnChunks
+                + " vram=" + (vertexMemoryBytes() / (1024 * 1024)) + "MB"
+                + " built=" + buildsStarted.get()
+                + " evicted=" + evicted
+                + " failed=" + buildsFailed.get();
+    }
+
     /** Blocks until all queued chunk builds and uploads are done (used by loading screens). */
     public void preloadAround(Vector3 pos, float radius, int maxWaitMillis) {
         long deadline = System.currentTimeMillis() + maxWaitMillis;
@@ -371,8 +508,11 @@ public final class ChunkManager implements Disposable {
         pool.shutdownNow();
         for (Chunk c : chunks.values()) {
             disposeMeshes(c);
+            c.geometry = null;
         }
         chunks.clear();
+        finished.clear();
+        building.clear();
         map.releaseAllChunks();
     }
 }

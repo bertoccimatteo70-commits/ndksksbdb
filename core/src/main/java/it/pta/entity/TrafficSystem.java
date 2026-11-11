@@ -42,6 +42,10 @@ public final class TrafficSystem {
     public float lastCarHitPlayer;
     public float lastPedHit;
     public int pedsHitTotal;
+    /** Diagnostic counters: body contacts resolved this session. */
+    public int playerNpcContacts;
+    public int npcNpcSeparations;
+    public int pedVehicleContacts;
 
     public TrafficSystem(MapData map, VehicleLibrary vehicles) {
         this.map = map;
@@ -329,11 +333,84 @@ public final class TrafficSystem {
                     lastPedHit = Math.abs(v.speed);
                 }
             }
+            // Pedestrians are solid against the player: walking into one pushes the
+            // body aside instead of passing through it. The player keeps most of the
+            // ground, so a crowd can slow the walk but never trap it.
+            if (!player.inVehicle()) {
+                float minD = NpcCollision.PLAYER_RADIUS + NpcCollision.PED_RADIUS;
+                if (NpcCollision.overlaps(player.x, player.z, p.x, p.z, minD)) {
+                    float[] pa = {player.x, 0f, player.z};
+                    float[] pb = {p.x, 0f, p.z};
+                    NpcCollision.separate(pa, pb, minD, 0.35f, 0.30f);
+                    if (!map.blocked(pa[0], pa[2], NpcCollision.PLAYER_RADIUS)) {
+                        player.x = pa[0];
+                        player.z = pa[2];
+                    }
+                    float[] pr = {pb[0], 0f, pb[2]};
+                    map.resolveCollision(pr, NpcCollision.PED_RADIUS);
+                    p.x = pr[0];
+                    p.z = pr[2];
+                    p.y = map.heightAt(p.x, p.z);
+                    p.scare = Math.max(p.scare, 0.9f);
+                    playerNpcContacts++;
+                }
+            }
+            // Vehicles do not drive through people: the pedestrian is pushed out of
+            // the bumper and the driver brakes. The AI routine keeps running.
+            for (Vehicle v : cars) {
+                float d = (float) Math.hypot(v.x - p.x, v.z - p.z);
+                float minD = 1.6f;
+                if (d >= minD || d < 1e-4f) {
+                    continue;
+                }
+                float ux = (p.x - v.x) / d;
+                float uz = (p.z - v.z) / d;
+                float[] pr = {p.x + ux * (minD - d), 0f, p.z + uz * (minD - d)};
+                map.resolveCollision(pr, NpcCollision.PED_RADIUS);
+                p.x = pr[0];
+                p.z = pr[2];
+                p.y = map.heightAt(p.x, p.z);
+                p.scare = Math.max(p.scare, 1.8f);
+                p.heading += MathUtils.PI * 0.4f;
+                v.speed *= 0.55f;
+                lastPedHit = Math.max(lastPedHit, Math.abs(v.speed));
+                pedVehicleContacts++;
+            }
             // wander around a bounded route
             if (p.life > 30f && p.road != null) {
                 it.remove();
             }
         }
+        // Pedestrian versus pedestrian: bodies keep a stable separation. The
+        // correction is small and symmetric, which avoids the jitter of pushing each
+        // other fully every frame, and the passenger count is bounded (22), so the
+        // pairwise check stays cheap.
+        for (int i = 0; i < peds.size(); i++) {
+            Ped a = peds.get(i);
+            for (int j = i + 1; j < peds.size(); j++) {
+                Ped b = peds.get(j);
+                float minD = NpcCollision.PED_RADIUS * 2f;
+                if (!NpcCollision.overlaps(a.x, a.z, b.x, b.z, minD)) {
+                    continue;
+                }
+                float[] pa = {a.x, 0f, a.z};
+                float[] pb = {b.x, 0f, b.z};
+                NpcCollision.separate(pa, pb, minD, 0.5f, 0.10f);
+                applyResolved(a, pa);
+                applyResolved(b, pb);
+                npcNpcSeparations++;
+            }
+        }
+    }
+
+    /** Applies a resolved position unless a wall is in the way. */
+    private void applyResolved(Ped p, float[] pos) {
+        if (map.blocked(pos[0], pos[2], NpcCollision.PED_RADIUS)) {
+            return;
+        }
+        p.x = pos[0];
+        p.z = pos[2];
+        p.y = map.heightAt(p.x, p.z);
     }
 
     private void trySpawnPed(Player player) {

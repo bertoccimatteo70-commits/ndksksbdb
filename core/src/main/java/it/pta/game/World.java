@@ -98,6 +98,11 @@ public final class World implements PoliceSystem.PoliceHost {
     private float interiorCooldown;
     private float currentCamYaw;
     private final RoadRouter roadRouter;
+    private final java.util.concurrent.ExecutorService gpsPool;
+    private final java.util.concurrent.atomic.AtomicBoolean gpsBusy =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicReference<RoadRouter.Route> gpsPending =
+            new java.util.concurrent.atomic.AtomicReference<>();
     private Mesh gpsMesh;
     private float gpsTimer;
     private float gpsLastX, gpsLastZ;
@@ -106,6 +111,11 @@ public final class World implements PoliceSystem.PoliceHost {
     public String gpsMessage = "";
     public float gpsDistance;
     public float[] gpsRoute;
+    /** Next manoeuvre of the active route, shown by the HUD. */
+    public float gpsNextTurnDistance;
+    public int gpsNextTurnSide;
+    public String gpsNextTurnStreet = "";
+    public String gpsGraphStats = "";
 
     private static final class Target {
         Vehicle vehicle;
@@ -154,6 +164,21 @@ public final class World implements PoliceSystem.PoliceHost {
         this.police = new PoliceSystem(map, vehicles);
         this.missions = new MissionSystem(this, map);
         this.roadRouter = new RoadRouter(map);
+        this.gpsPool = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "pta-gps-router");
+            t.setDaemon(true);
+            t.setPriority(Thread.NORM_PRIORITY - 1);
+            return t;
+        });
+        // The junction graph decodes every drivable way of the province: build it off
+        // the render thread so the first route request never stalls a frame.
+        gpsPool.execute(() -> {
+            long t0 = System.nanoTime();
+            roadRouter.prewarm();
+            gpsGraphStats = roadRouter.nodeCount() + " nodi / " + roadRouter.edgeCount()
+                    + " archi in " + ((System.nanoTime() - t0) / 1000000) + " ms";
+            Gdx.app.log("PTA", "gps graph: " + gpsGraphStats);
+        });
 
         Content.init(map, landmarksJson);
         Gdx.app.log("PTA", "world: OSM buildings=" + map.buildingCount
@@ -1085,13 +1110,12 @@ public final class World implements PoliceSystem.PoliceHost {
             meshXf.idt();
             shader.setUniformf("u_tint", 1f, 1f, 1f, 1f);
             shader.setUniformMatrix("u_model", meshXf);
+            // The ribbon sits a couple of centimetres above the carriageway; the
+            // polygon offset keeps it from fighting the asphalt at grazing angles.
+            Gdx.gl.glEnable(GL20.GL_POLYGON_OFFSET_FILL);
+            Gdx.gl.glPolygonOffset(-2f, -4f);
             gpsMesh.render(shader, GL20.GL_TRIANGLES);
-        }
-        if (gpsMesh != null) {
-            meshXf.idt();
-            shader.setUniformf("u_tint", 1f, 1f, 1f, 1f);
-            shader.setUniformMatrix("u_model", meshXf);
-            gpsMesh.render(shader, GL20.GL_TRIANGLES);
+            Gdx.gl.glDisable(GL20.GL_POLYGON_OFFSET_FILL);
         }
         if (p.vehicle == null) {
             p.draw(shader, renderer);
@@ -1361,65 +1385,200 @@ public final class World implements PoliceSystem.PoliceHost {
     private void updateGps(float dt, Player p) {
         gpsTimer -= dt;
         if (!missions.markerActive) {
-            if (gpsMesh != null) {
-                gpsMesh.dispose();
-                gpsMesh = null;
-            }
-            gpsRoute = null;
-            gpsAvailable = false;
-            gpsMessage = "";
-            gpsDistance = 0f;
+            clearGps();
             return;
         }
-        float moved = (float) Math.hypot(p.x - gpsLastX, p.z - gpsLastZ);
-        float targetMoved = (float) Math.hypot(missions.markerX - gpsLastTargetX,
-                missions.markerZ - gpsLastTargetZ);
-        if (gpsTimer > 0f && moved < 10f && targetMoved < 10f) {
+        RoadRouter.Route arrived = gpsPending.getAndSet(null);
+        if (arrived != null) {
+            applyRoute(arrived);
+        }
+        if (gpsBusy.get()) {
             return;
         }
-        gpsTimer = 1.5f;
-        gpsLastX = p.x;
-        gpsLastZ = p.z;
-        gpsLastTargetX = missions.markerX;
-        gpsLastTargetZ = missions.markerZ;
-        RoadRouter.Route route = roadRouter.route(p.x, p.z, missions.markerX, missions.markerZ);
-        gpsAvailable = route.found;
-        gpsMessage = route.message;
-        gpsDistance = route.length;
-        gpsRoute = route.found ? route.points : null;
+        // Reroute as soon as the player drifts off the planned streets, when the
+        // objective moves, or when the route has gone stale after a few seconds.
+        boolean offRoute = gpsAvailable && gpsRoute != null
+                && RoadRouter.deviation(gpsRoute, p.x, p.z) > 22f;
+        boolean targetMoved = Math.hypot(missions.markerX - gpsLastTargetX,
+                missions.markerZ - gpsLastTargetZ) > 12f;
+        boolean walkedAway = Math.hypot(p.x - gpsLastX, p.z - gpsLastZ) > 15f;
+        if (!gpsAvailable || offRoute || targetMoved || (gpsTimer <= 0f && walkedAway)) {
+            requestRoute(p);
+        }
+    }
+
+    private void clearGps() {
         if (gpsMesh != null) {
             gpsMesh.dispose();
             gpsMesh = null;
         }
-        if (!route.found) {
+        gpsRoute = null;
+        gpsAvailable = false;
+        gpsMessage = "";
+        gpsDistance = 0f;
+        gpsNextTurnDistance = 0f;
+        gpsNextTurnSide = 0;
+        gpsNextTurnStreet = "";
+    }
+
+    /** Hands the route request to the router thread; the GL thread never blocks. */
+    private void requestRoute(Player p) {
+        if (!gpsBusy.compareAndSet(false, true)) {
             return;
         }
-        MeshBuilder mb = new MeshBuilder();
-        float[] pts = route.points;
-        for (int i = 0; i + 3 < pts.length; i += 2) {
-            float ax = pts[i], az = pts[i + 1];
-            float bx = pts[i + 2], bz = pts[i + 3];
-            float dx = bx - ax, dz = bz - az;
-            float len = (float) Math.hypot(dx, dz);
-            if (len < 0.15f) continue;
-            float nx = -dz / len, nz = dx / len;
-            float half = 0.48f;
-            float y0 = map.heightAt(ax, az) + 0.16f;
-            float y1 = map.heightAt(bx, bz) + 0.16f;
-            int v0 = mb.vertex(ax + nx * half, y0, az + nz * half, 0, 1, 0,
-                    0.12f, 0.92f, 0.96f, Atlas.PAINT, 0, 0);
-            int v1 = mb.vertex(ax - nx * half, y0, az - nz * half, 0, 1, 0,
-                    0.12f, 0.92f, 0.96f, Atlas.PAINT, 0, 1);
-            int v2 = mb.vertex(bx - nx * half, y1, bz - nz * half, 0, 1, 0,
-                    0.12f, 0.92f, 0.96f, Atlas.PAINT, 1, 1);
-            int v3 = mb.vertex(bx + nx * half, y1, bz + nz * half, 0, 1, 0,
-                    0.12f, 0.92f, 0.96f, Atlas.PAINT, 1, 0);
-            mb.quad(v0, v1, v2, v3);
+        gpsTimer = 2f;
+        final float sx = p.x, sz = p.z;
+        final float tx = missions.markerX, tz = missions.markerZ;
+        final float heading = p.vehicle != null ? p.vehicle.heading : p.heading;
+        final float hx = MathUtils.sin(heading);
+        final float hz = -MathUtils.cos(heading);
+        gpsLastX = sx;
+        gpsLastZ = sz;
+        gpsLastTargetX = tx;
+        gpsLastTargetZ = tz;
+        gpsPool.execute(() -> {
+            RoadRouter.Route r = null;
+            try {
+                r = roadRouter.route(sx, sz, tx, tz, hx, hz);
+            } catch (Throwable t) {
+                Gdx.app.error("PTA", "gps route failed", t);
+            }
+            if (r != null) {
+                gpsPending.set(r);
+            }
+            gpsBusy.set(false);
+        });
+    }
+
+    private void applyRoute(RoadRouter.Route route) {
+        gpsAvailable = route.found;
+        gpsMessage = route.message;
+        gpsDistance = route.length;
+        gpsRoute = route.found ? route.points : null;
+        gpsNextTurnDistance = route.nextTurnDistance;
+        gpsNextTurnSide = route.nextTurnSide;
+        gpsNextTurnStreet = route.nextTurnStreet == null ? "" : route.nextTurnStreet;
+        if (gpsMesh != null) {
+            gpsMesh.dispose();
+            gpsMesh = null;
         }
-        gpsMesh = Meshes.from(mb);
+        if (route.found) {
+            gpsMesh = buildGpsMesh(route.points);
+        }
+    }
+
+    /**
+     * Builds the navigation ribbon lying on the carriageway. Each path point gets one
+     * miter normal (the average of the two adjacent segment normals), so consecutive
+     * quads share their edge and bends cannot open a gap. Chevrons every ~55 m show
+     * the direction of travel of the whole route, not only near the player.
+     */
+    private Mesh buildGpsMesh(float[] pts) {
+        int n = pts.length / 2;
+        if (n < 2) {
+            return null;
+        }
+        float[] px = new float[n];
+        float[] pz = new float[n];
+        for (int i = 0; i < n; i++) {
+            px[i] = pts[i * 2];
+            pz[i] = pts[i * 2 + 1];
+        }
+        float[] segNx = new float[Math.max(1, n - 1)];
+        float[] segNz = new float[Math.max(1, n - 1)];
+        for (int i = 0; i + 1 < n; i++) {
+            float dx = px[i + 1] - px[i], dz = pz[i + 1] - pz[i];
+            float len = (float) Math.hypot(dx, dz);
+            if (len < 1e-4f) {
+                len = 1f;
+            }
+            segNx[i] = -dz / len;
+            segNz[i] = dx / len;
+        }
+        float[] nx = new float[n];
+        float[] nz = new float[n];
+        for (int i = 0; i < n; i++) {
+            float ax = i > 0 ? segNx[i - 1] : segNx[0];
+            float az = i > 0 ? segNz[i - 1] : segNz[0];
+            float bx = i + 1 < n ? segNx[i] : segNx[Math.max(0, n - 2)];
+            float bz = i + 1 < n ? segNz[i] : segNz[Math.max(0, n - 2)];
+            float mx = ax + bx, mz = az + bz;
+            float len = (float) Math.hypot(mx, mz);
+            if (len < 1e-3f) {
+                mx = ax;
+                mz = az;
+                len = 1f;
+            }
+            mx /= len;
+            mz /= len;
+            float dot = mx * ax + mz * az;
+            float miter = 1f / Math.max(0.35f, dot);
+            nx[i] = mx * miter;
+            nz[i] = mz * miter;
+        }
+        MeshBuilder mb = new MeshBuilder();
+        for (int i = 0; i + 1 < n; i++) {
+            if (Math.hypot(px[i + 1] - px[i], pz[i + 1] - pz[i]) < 0.05f) {
+                continue;
+            }
+            float y0 = map.heightAt(px[i], pz[i]);
+            float y1 = map.heightAt(px[i + 1], pz[i + 1]);
+            ribbon(mb, px[i], pz[i], y0 + 0.10f, px[i + 1], pz[i + 1], y1 + 0.10f,
+                    nx[i], nz[i], nx[i + 1], nz[i + 1], 1.15f, 0.02f, 0.09f, 0.14f);
+            ribbon(mb, px[i], pz[i], y0 + 0.13f, px[i + 1], pz[i + 1], y1 + 0.13f,
+                    nx[i], nz[i], nx[i + 1], nz[i + 1], 0.72f, 0.10f, 0.95f, 1.00f);
+        }
+        float along = 0f;
+        for (int i = 0; i + 1 < n; i++) {
+            float sx = px[i], sz = pz[i];
+            float ex = px[i + 1], ez = pz[i + 1];
+            float len = (float) Math.hypot(ex - sx, ez - sz);
+            if (len < 0.2f) {
+                continue;
+            }
+            along += len;
+            if (along >= 55f) {
+                along = 0f;
+                gpsArrow(mb, (sx + ex) * 0.5f, (sz + ez) * 0.5f,
+                        ex - sx, ez - sz, map.heightAt(sx, sz) + 0.20f);
+            }
+        }
+        return Meshes.from(mb);
+    }
+
+    private static void ribbon(MeshBuilder mb, float ax, float az, float ay,
+                              float bx, float bz, float by,
+                              float nax, float naz, float nbx, float nbz, float half,
+                              float r, float g, float b) {
+        int v0 = mb.vertex(ax + nax * half, ay, az + naz * half, 0, 1, 0, r, g, b, Atlas.PAINT, 0, 0);
+        int v1 = mb.vertex(ax - nax * half, ay, az - naz * half, 0, 1, 0, r, g, b, Atlas.PAINT, 0, 1);
+        int v2 = mb.vertex(bx - nbx * half, by, bz - nbz * half, 0, 1, 0, r, g, b, Atlas.PAINT, 1, 1);
+        int v3 = mb.vertex(bx + nbx * half, by, bz + nbz * half, 0, 1, 0, r, g, b, Atlas.PAINT, 1, 0);
+        mb.quad(v0, v1, v2, v3);
+    }
+
+    private static void gpsArrow(MeshBuilder mb, float x, float z, float dx, float dz, float y) {
+        float len = (float) Math.hypot(dx, dz);
+        if (len < 1e-4f) {
+            return;
+        }
+        dx /= len;
+        dz /= len;
+        float px = -dz, pz = dx;
+        int tip = mb.vertex(x + dx * 2.2f, y, z + dz * 2.2f, 0, 1, 0,
+                1f, 1f, 1f, Atlas.PAINT, 0, 0);
+        int l = mb.vertex(x - dx * 0.9f + px * 1.5f, y, z - dz * 0.9f + pz * 1.5f, 0, 1, 0,
+                0.92f, 1f, 1f, Atlas.PAINT, 0, 0);
+        int mid = mb.vertex(x - dx * 0.1f, y, z - dz * 0.1f, 0, 1, 0,
+                1f, 1f, 1f, Atlas.PAINT, 0, 0);
+        int rr = mb.vertex(x - dx * 0.9f - px * 1.5f, y, z - dz * 0.9f - pz * 1.5f, 0, 1, 0,
+                0.92f, 1f, 1f, Atlas.PAINT, 0, 0);
+        mb.tri(tip, l, mid);
+        mb.tri(tip, mid, rr);
     }
 
     public void dispose() {
+        gpsPool.shutdownNow();
         if (gpsMesh != null) {
             gpsMesh.dispose();
             gpsMesh = null;

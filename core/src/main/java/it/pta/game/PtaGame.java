@@ -166,6 +166,8 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     private void renderScene(float delta) {
         // Streams the city around the current camera. This must run on the GL thread:
         // chunk workers only build data, while uploadFinished() creates the meshes here.
+        // The camera direction feeds the predictive, direction-biased chunk requests.
+        renderer.chunkManager().setFocus(rig.camera.direction.x, rig.camera.direction.z);
         renderer.chunkManager().update(rig.camera.position, delta);
         renderer.beginFrame(rig.camera, delta);
         renderer.drawWorld(rig.camera);
@@ -178,6 +180,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
             Gdx.app.log("PTA", "render: triangles=" + renderer.lastTriangles
                     + " drawnChunks=" + renderer.lastDrawnChunks
                     + " loadedChunks=" + renderer.chunkManager().loadedChunks()
+                    + " " + renderer.chunkManager().stats()
                     + " sun=" + renderer.sun.hours
                     + " camera=" + rig.camera.position
                     + " cameraBlocked=" + map.blocked(rig.camera.position.x, rig.camera.position.z, 0.4f));

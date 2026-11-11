@@ -563,91 +563,377 @@ public final class GameUi {
     // -------------------------------------------------------------------- map
 
     private void buildMap(Table root) {
-        Table box = panelBox("MAPPA DELLA PROVINCIA");
+        // Full-screen map: the map actor fills the whole panel area, controls float
+        // over it. It only reads the 2D spatial index, never the 3D chunk meshes.
+        root.clear();
+        com.badlogic.gdx.scenes.scene2d.ui.Stack stack =
+                new com.badlogic.gdx.scenes.scene2d.ui.Stack();
         MapView view = new MapView();
-        box.add(view).size(a.dp(620), a.dp(320)).row();
-        Label legend = new Label("Pistoia · Agliana · Montale · Quarrata · Casalguidi · Serravalle · Montecatini · Pescia",
-                a.skin, "small");
-        box.add(legend).padTop(a.dp(6)).row();
-        Table places = new Table();
-        int count = 0;
-        for (Content.Place p : Content.all()) {
-            if (p.kind == Content.Kind.LANDMARK || p.kind == Content.Kind.HOME
-                    || p.kind == Content.Kind.DEALER || p.kind == Content.Kind.BUSINESS) {
-                Label l = new Label((world.economy.owns(p.id) ? "✓ " : "") + p.label, a.skin, "small");
-                places.add(l).left().pad(a.dp(2)).width(a.dp(190));
-                count++;
-                if (count % 3 == 0) {
-                    places.row();
+        stack.add(view);
+
+        Table overlay = new Table();
+        overlay.top();
+        Table header = new Table();
+        header.add(new Label("MAPPA DELLA PROVINCIA", a.skin, "accent")).expandX().left().pad(a.dp(12));
+        header.add(button("CHIUDI", () -> {
+            world.audio.uiClick();
+            showPause();
+        })).size(a.dp(120), a.dp(40)).pad(a.dp(8));
+        overlay.add(header).growX().top().row();
+
+        Table legend = new Table();
+        legend.add(swatch(new Color(0.74f, 0.79f, 0.86f, 1f))).size(a.dp(14)).padRight(a.dp(4));
+        legend.add(new Label("strade", a.skin, "small")).padRight(a.dp(12));
+        legend.add(swatch(new Color(0.46f, 0.42f, 0.38f, 1f))).size(a.dp(14)).padRight(a.dp(4));
+        legend.add(new Label("edifici", a.skin, "small")).padRight(a.dp(12));
+        legend.add(swatch(new Color(0.24f, 0.38f, 0.28f, 1f))).size(a.dp(14)).padRight(a.dp(4));
+        legend.add(new Label("aree", a.skin, "small")).padRight(a.dp(12));
+        legend.add(swatch(new Color(0.10f, 0.95f, 1f, 1f))).size(a.dp(14)).padRight(a.dp(4));
+        legend.add(new Label("GPS", a.skin, "small")).padRight(a.dp(12));
+        legend.add(swatch(new Color(1f, 0.62f, 0.15f, 1f))).size(a.dp(14)).padRight(a.dp(4));
+        legend.add(new Label("tu", a.skin, "small"));
+        overlay.add(legend).growX().left().padLeft(a.dp(12)).row();
+
+        overlay.add().expand().row();
+        Table bottom = new Table();
+        bottom.add(new Label("Pizzica per zoomare, trascina per spostarti", a.skin, "small"))
+                .expandX().left().pad(a.dp(8)).row();
+        Table buttons = new Table();
+        buttons.add(button("CENTRA SU DI ME", () -> {
+            world.audio.uiClick();
+            view.recenter();
+        })).size(a.dp(200), a.dp(44)).pad(a.dp(4));
+        buttons.add(button("TUTTA LA CITTÀ", () -> {
+            world.audio.uiClick();
+            view.fitToCity();
+        })).size(a.dp(200), a.dp(44)).pad(a.dp(4));
+        bottom.add(buttons).growX().left().row();
+        overlay.add(bottom).growX().bottom().pad(a.dp(6));
+        stack.add(overlay);
+        root.add(stack).grow();
+    }
+
+    private com.badlogic.gdx.scenes.scene2d.ui.Image swatch(Color color) {
+        return new Image(a.skin.newDrawable("white", color));
+    }
+
+    /**
+     * Full-screen province map. The view keeps a world-space centre and a pixels-per-
+     * metre scale: zoom is a pinch or a button, pan is a drag, and both buttons recompute
+     * the visible extract from the 2D index. Nothing here touches 3D chunk meshes, so
+     * opening the map cannot pull the city geometry into RAM.
+     */
+    private final class MapView extends Actor {
+        private final List<float[]> roads = new ArrayList<>();
+        private final List<float[]> areaOutlines = new ArrayList<>();
+        private final List<float[]> buildingRects = new ArrayList<>();
+        private final List<float[]> pois = new ArrayList<>();
+        private final float[][] poiColors = {
+                {0.95f, 0.45f, 0.35f}, {0.95f, 0.75f, 0.30f}, {0.45f, 0.85f, 0.55f},
+                {0.40f, 0.75f, 0.95f}, {0.72f, 0.55f, 0.95f}, {0.90f, 0.90f, 0.90f}
+        };
+        private float scale = 0f;
+        private float fitScale = 1f;
+        private float centerX, centerZ;
+        private boolean ready;
+        private float cacheCX = Float.NaN, cacheCZ, cacheScale;
+        private float lastPinch = -1f;
+        private float dragLastX, dragLastY;
+        private boolean dragging;
+
+        MapView() {
+            setTouchable(com.badlogic.gdx.scenes.scene2d.Touchable.enabled);
+            addListener(new com.badlogic.gdx.scenes.scene2d.InputListener() {
+                @Override
+                public boolean touchDown(InputEvent event, float x, float y, int pointer, int button) {
+                    dragging = true;
+                    dragLastX = x;
+                    dragLastY = y;
+                    return true;
+                }
+
+                @Override
+                public void touchDragged(InputEvent event, float x, float y, int pointer) {
+                    if (!dragging || Gdx.input.isTouched(1) || scale <= 0f) {
+                        return;
+                    }
+                    centerX -= (x - dragLastX) / scale;
+                    centerZ += (y - dragLastY) / scale;
+                    dragLastX = x;
+                    dragLastY = y;
+                    clampCenter();
+                }
+
+                @Override
+                public void touchUp(InputEvent event, float x, float y, int pointer, int button) {
+                    dragging = false;
+                }
+
+                @Override
+                public boolean scrolled(InputEvent event, float x, float y, float amountX, float amountY) {
+                    zoomBy(amountY > 0f ? 1f / 1.25f : 1.25f);
+                    return true;
+                }
+            });
+        }
+
+        @Override
+        public void act(float delta) {
+            super.act(delta);
+            if (Gdx.input.isTouched(0) && Gdx.input.isTouched(1)) {
+                float d = (float) Math.hypot(Gdx.input.getX(1) - Gdx.input.getX(0),
+                        Gdx.input.getY(1) - Gdx.input.getY(0));
+                if (lastPinch > 0f && d > 1f) {
+                    zoomBy(d / lastPinch);
+                }
+                lastPinch = d;
+            } else {
+                lastPinch = -1f;
+            }
+        }
+
+        /** Fit to bounds: the whole available province in the available area. */
+        void fitToCity() {
+            float w = getWidth(), h = getHeight();
+            if (w <= 1f || h <= 1f) {
+                return;
+            }
+            float mapW = Math.max(1f, world.map.maxX - world.map.minX);
+            float mapH = Math.max(1f, world.map.maxZ - world.map.minZ);
+            fitScale = Math.min(w / mapW, h / mapH) * 0.94f;
+            scale = fitScale;
+            centerX = (world.map.minX + world.map.maxX) * 0.5f;
+            centerZ = (world.map.minZ + world.map.maxZ) * 0.5f;
+            rebuildCache();
+        }
+
+        void recenter() {
+            if (fitScale <= 0f) {
+                fitToCity();
+            }
+            centerX = world.player().x;
+            centerZ = world.player().z;
+            if (scale < fitScale * 2.5f) {
+                scale = fitScale * 4f;
+            }
+            clampCenter();
+            rebuildCache();
+        }
+
+        void zoomBy(float factor) {
+            if (fitScale <= 0f) {
+                fitToCity();
+            }
+            scale = Math.max(fitScale, Math.min(fitScale * 45f, scale * factor));
+            clampCenter();
+            rebuildCache();
+        }
+
+        private void clampCenter() {
+            centerX = MathUtils.clamp(centerX, world.map.minX, world.map.maxX);
+            centerZ = MathUtils.clamp(centerZ, world.map.minZ, world.map.maxZ);
+        }
+
+        private float sx(float worldX) {
+            return getX() + getWidth() * 0.5f + (worldX - centerX) * scale;
+        }
+
+        private float sy(float worldZ) {
+            return getY() + getHeight() * 0.5f - (worldZ - centerZ) * scale;
+        }
+
+        private void rebuildCache() {
+            float w = getWidth(), h = getHeight();
+            if (w <= 1f || h <= 1f || scale <= 0f) {
+                return;
+            }
+            cacheCX = centerX;
+            cacheCZ = centerZ;
+            cacheScale = scale;
+            float margin = 1.18f;
+            float halfW = w * 0.5f / scale * margin;
+            float halfH = h * 0.5f / scale * margin;
+            final float minX = centerX - halfW;
+            final float maxX = centerX + halfW;
+            final float minZ = centerZ - halfH;
+            final float maxZ = centerZ + halfH;
+            roads.clear();
+            final int limit = scale > fitScale * 6f ? 12000 : 6000;
+            world.map.forEachRoadSegment(minX, minZ, maxX, maxZ,
+                    (x0, z0, x1, z1, drivable) -> {
+                        roads.add(new float[]{x0, z0, x1, z1, drivable ? 1f : 0f});
+                        return roads.size() < limit;
+                    }, limit);
+            areaOutlines.clear();
+            buildingRects.clear();
+            pois.clear();
+            int c0 = world.map.cx(minX), c1 = world.map.cx(maxX);
+            int r0 = world.map.cz(minZ), r1 = world.map.cz(maxZ);
+            boolean wantBuildings = scale > fitScale * 2.2f;
+            boolean wantPois = scale > fitScale * 1.4f;
+            for (int r = r0; r <= r1; r++) {
+                for (int c = c0; c <= c1; c++) {
+                    if (areaOutlines.size() < 220) {
+                        for (int idx : world.map.areasIn(c, r)) {
+                            MapData.Area area = world.map.area(idx);
+                            if (area.radius < 22f) {
+                                continue;
+                            }
+                            areaOutlines.add(area.pts);
+                            if (areaOutlines.size() >= 220) {
+                                break;
+                            }
+                        }
+                    }
+                    if (wantBuildings && buildingRects.size() < 4000) {
+                        for (int idx : world.map.buildingsIn(c, r)) {
+                            MapData.Building b = world.map.building(idx);
+                            if (b.maxX < minX || b.minX > maxX || b.maxZ < minZ || b.minZ > maxZ) {
+                                continue;
+                            }
+                            buildingRects.add(new float[]{b.minX, b.minZ, b.maxX - b.minX,
+                                    b.maxZ - b.minZ, b.type == MapData.Building.HISTORIC ? 1f : 0f});
+                            if (buildingRects.size() >= 4000) {
+                                break;
+                            }
+                        }
+                    }
+                    if (wantPois && pois.size() < 500) {
+                        for (int idx : world.map.poisIn(c, r)) {
+                            MapData.Poi p = world.map.poi(idx);
+                            pois.add(new float[]{p.x, p.z, p.cat});
+                            if (pois.size() >= 500) {
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
-        box.add(places).padTop(a.dp(4)).row();
-        box.add(button("CHIUDI", () -> {
-            world.audio.uiClick();
-            showPause();
-        })).width(a.dp(220)).height(a.dp(44)).padTop(a.dp(8)).row();
-        root.center();
-        root.add(box);
-    }
 
-    private final class MapView extends Actor {
-        private final List<float[]> roads = new ArrayList<>();
-
-        MapView() {
-            float px = world.player().x;
-            float pz = world.player().z;
-            world.map.forEachRoadSegment(px - 3000, pz - 3000, px + 3000, pz + 3000,
-                    (x0, z0, x1, z1, drivable) -> {
-                        roads.add(new float[]{x0, z0, x1, z1});
-                        return roads.size() < 900;
-                    }, 900);
+        private void line(Batch batch, float x0, float y0, float x1, float y1, float thick) {
+            float dx = x1 - x0, dy = y1 - y0;
+            float len = (float) Math.sqrt(dx * dx + dy * dy);
+            if (len < 0.3f) {
+                return;
+            }
+            batch.draw(a.whiteRegion, x0, y0 - thick * 0.5f, 0, thick * 0.5f, len, thick,
+                    1f, 1f, (float) Math.toDegrees(Math.atan2(dy, dx)));
         }
 
         @Override
         public void draw(Batch batch, float parentAlpha) {
-            batch.setColor(0.035f, 0.055f, 0.075f, 0.96f);
-            batch.draw(a.white, getX(), getY(), getWidth(), getHeight());
-            float scale = Math.min(getWidth(), getHeight()) / 5600f;
-            float cx = getX() + getWidth() * 0.5f;
-            float cy = getY() + getHeight() * 0.5f;
-            float px = world.player().x;
-            float pz = world.player().z;
+            float w = getWidth(), h = getHeight();
+            if (w <= 1f || h <= 1f) {
+                return;
+            }
+            if (!ready) {
+                fitToCity();
+                ready = true;
+            }
+            if (Float.isNaN(cacheCX) || Math.abs(scale - cacheScale) > 1e-7f
+                    || Math.hypot(centerX - cacheCX, centerZ - cacheCZ) * scale
+                    > Math.min(w, h) * 0.22f) {
+                rebuildCache();
+            }
+            float dp = Math.max(0.6f, a.density);
+            batch.setColor(0.020f, 0.040f, 0.060f, 1f);
+            batch.draw(a.white, getX(), getY(), w, h);
+            // Province bounds, so the frame of the map is visible at every zoom.
+            batch.setColor(0.075f, 0.115f, 0.155f, 1f);
+            float bx = sx(world.map.minX);
+            float by = sy(world.map.maxZ);
+            batch.draw(a.white, bx, by, (world.map.maxX - world.map.minX) * scale,
+                    (world.map.maxZ - world.map.minZ) * scale);
+
+            for (float[] pts : areaOutlines) {
+                batch.setColor(0.22f, 0.34f, 0.26f, 0.55f);
+                for (int i = 0; i + 3 < pts.length; i += 2) {
+                    line(batch, sx(pts[i]), sy(pts[i + 1]), sx(pts[i + 2]), sy(pts[i + 3]),
+                            0.8f * dp);
+                }
+            }
             for (float[] r : roads) {
-                float x0 = cx + (r[0] - px) * scale;
-                float y0 = cy - (r[1] - pz) * scale;
-                float x1 = cx + (r[2] - px) * scale;
-                float y1 = cy - (r[3] - pz) * scale;
-                float dx = x1 - x0, dy = y1 - y0;
-                float len = (float) Math.sqrt(dx * dx + dy * dy);
-                if (len < 0.5f) {
+                boolean drivable = r[4] > 0.5f;
+                float thick = (drivable ? Math.max(1.3f, Math.min(4.5f, scale * 8f))
+                        : Math.max(0.7f, Math.min(2f, scale * 3f))) * dp;
+                batch.setColor(drivable ? 0.76f : 0.44f, drivable ? 0.81f : 0.49f,
+                        drivable ? 0.88f : 0.56f, drivable ? 0.95f : 0.68f);
+                line(batch, sx(r[0]), sy(r[1]), sx(r[2]), sy(r[3]), thick);
+            }
+            for (float[] b : buildingRects) {
+                float x = sx(b[0]), y = sy(b[1]);
+                if (x < getX() - 20f || x > getX() + w + 20f || y < getY() - 20f
+                        || y > getY() + h + 20f) {
                     continue;
                 }
-                batch.setColor(0.70f, 0.76f, 0.84f, 0.55f);
-                batch.draw(a.whiteRegion, x0, y0 - 1.2f, 0, 1.2f, len, 2.4f, 1f, 1f,
-                        (float) Math.toDegrees(Math.atan2(dy, dx)));
+                float bw = Math.max(1.2f, b[2] * scale);
+                float bh = Math.max(1.2f, b[3] * scale);
+                batch.setColor(b[4] > 0.5f ? 0.55f : 0.45f, b[4] > 0.5f ? 0.48f : 0.42f,
+                        b[4] > 0.5f ? 0.40f : 0.39f, 0.92f);
+                batch.draw(a.white, x, y - bh, bw, bh);
+            }
+            for (float[] p : pois) {
+                float[] col = poiColors[(int) Math.abs(p[2]) % poiColors.length];
+                batch.setColor(col[0], col[1], col[2], 0.95f);
+                float x = sx(p[0]) - 2.4f * dp;
+                float y = sy(p[1]) - 2.4f * dp;
+                batch.draw(a.circle, x, y, 4.8f * dp, 4.8f * dp);
+            }
+            // The exact route of the 3D ribbon, drawn from the same array.
+            float[] route = world.gpsRoute;
+            if (route != null && route.length >= 4) {
+                batch.setColor(0.02f, 0.10f, 0.14f, 0.9f);
+                for (int i = 0; i + 3 < route.length; i += 2) {
+                    line(batch, sx(route[i]), sy(route[i + 1]), sx(route[i + 2]),
+                            sy(route[i + 3]), 5.4f * dp);
+                }
+                batch.setColor(0.10f, 0.95f, 1f, 1f);
+                for (int i = 0; i + 3 < route.length; i += 2) {
+                    line(batch, sx(route[i]), sy(route[i + 1]), sx(route[i + 2]),
+                            sy(route[i + 3]), 2.8f * dp);
+                }
+            }
+            if (world.missions.markerActive) {
+                float dx = sx(world.missions.markerX);
+                float dy = sy(world.missions.markerZ);
+                batch.setColor(0.98f, 0.80f, 0.25f, 1f);
+                batch.draw(a.circle, dx - 7f * dp, dy - 7f * dp, 14f * dp, 14f * dp);
+                batch.setColor(0.10f, 0.08f, 0.02f, 1f);
+                batch.draw(a.circle, dx - 3f * dp, dy - 3f * dp, 6f * dp, 6f * dp);
             }
             for (Content.Place p : Content.all()) {
-                if (p.kind != Content.Kind.LANDMARK && p.kind != Content.Kind.HOME
-                        && p.kind != Content.Kind.DEALER && p.kind != Content.Kind.BUSINESS) {
+                if (p.kind != Content.Kind.LANDMARK) {
                     continue;
                 }
-                float x = cx + (p.x - px) * scale;
-                float y = cy - (p.z - pz) * scale;
-                if (x < getX() || x > getX() + getWidth() || y < getY() || y > getY() + getHeight()) {
+                float x = sx(p.x), y = sy(p.z);
+                if (x < getX() || x > getX() + w || y < getY() || y > getY() + h) {
                     continue;
                 }
-                batch.setColor(p.kind == Content.Kind.LANDMARK ? new Color(0.95f, 0.78f, 0.30f, 1f)
-                        : new Color(0.55f, 0.80f, 0.95f, 1f));
-                batch.draw(a.circle, x - 4, y - 4, 8, 8);
-                a.small.setColor(0.90f, 0.94f, 0.98f, 1f);
-                a.small.draw(batch, p.label, x + 6, y + 4);
+                batch.setColor(0.95f, 0.78f, 0.30f, 1f);
+                batch.draw(a.circle, x - 3f * dp, y - 3f * dp, 6f * dp, 6f * dp);
+                a.small.setColor(0.90f, 0.94f, 0.98f, 0.95f);
+                a.small.draw(batch, p.label, x + 6f * dp, y + 4f * dp);
             }
-            batch.setColor(1f, 0.35f, 0.30f, 1f);
-            float x = cx + (world.player().x - px) * scale;
-            float y = cy - (world.player().z - pz) * scale;
-            batch.draw(a.circle, x - 5, y - 5, 10, 10);
+            // Player: a triangle rotated by the real heading, not a line.
+            float px = sx(world.player().x);
+            float py = sy(world.player().z);
+            float size = 22f * dp;
+            batch.setColor(1f, 0.62f, 0.15f, 0.28f);
+            batch.draw(a.circle, px - 14f * dp, py - 14f * dp, 28f * dp, 28f * dp);
+            batch.setColor(1f, 0.66f, 0.18f, 1f);
+            batch.draw(a.triangleRegion, px - size * 0.5f, py - size * 0.5f, size * 0.5f,
+                    size * 0.5f, size, size, 1f, 1f,
+                    -(float) Math.toDegrees(world.player().heading));
             batch.setColor(Color.WHITE);
+            if (world.gpsAvailable) {
+                a.small.setColor(0.75f, 0.95f, 1f, 1f);
+                String turn = world.gpsNextTurnSide > 0 ? "destra"
+                        : world.gpsNextTurnSide < 0 ? "sinistra" : "dritto";
+                a.small.draw(batch, "Percorso " + (int) world.gpsDistance + " m · " + turn
+                        + " tra " + (int) world.gpsNextTurnDistance + " m",
+                        getX() + 14f * dp, getY() + 96f * dp);
+            }
         }
     }
 
