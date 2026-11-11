@@ -54,35 +54,47 @@ jobs:
       - name: Run engine tests
         run: ./gradlew :core:test --stacktrace --no-daemon
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+      - name: Build signed release APK
+        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon
 
-      - name: Verify APK
+      # Every run must ship the SAME signing certificate, otherwise the update
+      # cannot be installed over the previous build.
+      - name: Verify APK signature and contents
         run: |
-          ls -lh app/build/outputs/apk/debug/
-          unzip -l app/build/outputs/apk/debug/app-debug.apk | head -40
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          BT="$(ls -d "$SDK"/build-tools/* | sort -V | tail -n 1)"
+          APK=app/build/outputs/apk/release/app-release.apk
+          ls -lh app/build/outputs/apk/release/
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/sig.txt
+          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" /tmp/sig.txt
+          grep -qi "certificate SHA-256 digest: 1039e439e31f641f7c49b68ef9d2e120a6a6ab473918e3ecd79c9d87724c0841" /tmp/sig.txt
+          "$BT/aapt" dump badging "$APK" | grep -E "^package|sdkVersion|native-code"
+          "$BT/aapt" dump badging "$APK" | grep -q "versionCode='7'"
+          unzip -l "$APK" | grep -q "lib/arm64-v8a/libgdx.so"
+          unzip -l "$APK" | grep -q "lib/armeabi-v7a/libgdx.so"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PTA-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: PTA-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          VERSION="1.0.5"
+          VERSION="1.0.6"
           TAG="v${VERSION}"
           APK="PTA-${VERSION}.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
-          NOTES="Road and collision overhaul: asphalt with shoulders, kerbs, sidewalks and readable markings at LOD 0/1/2; exact polygon-edge collision with iterative push-out; substepped player and full-footprint vehicle sweeps; safe interior exits and street-door entry; road-graph GPS drawn on the asphalt with an explicit no-route state; nearest-first chunk streaming. All 71.844 buildings, 26.296 roads, 17.679 drivable elements, areas, POIs and 70 interiors are preserved. Includes 20 JVM tests. APK debug installable: arm64-v8a, armeabi-v7a, x86_64."
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          NOTES="Installable update: the APK is now signed with one stable release key (v2+v3) instead of a fresh CI debug key, so each new build installs over the previous one. Uninstall the old 1.0.5 once, then updates work normally. Same game content as 1.0.5: asphalt with shoulders, kerbs, sidewalks and markings at LOD 0/1/2; exact polygon-edge collision; substepped player and full-footprint vehicle sweeps; safe interior exits; road-graph GPS with a no-route state. All 71.844 buildings, 26.296 roads, 17.679 drivable elements, areas, POIs and 70 interiors preserved. Includes 20 JVM tests. APK: arm64-v8a, armeabi-v7a, x86_64."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber
           else
             gh release create "$TAG" "$APK" \
-              --title "PTA 1.0.5 - solid city and road GPS" \
+              --title "PTA 1.0.6 - installable update" \
               --target "$GITHUB_SHA" \
               --notes "$NOTES"
           fi

@@ -6,6 +6,19 @@ configurations {
     natives
 }
 
+// One stable distribution key, so every APK can be installed over the previous one.
+// The keystore can be overridden by environment variables for a private setup.
+def ptaKeystoreFile = System.getenv('PTA_KEYSTORE_FILE')
+        ? file(System.getenv('PTA_KEYSTORE_FILE'))
+        : rootProject.file('keystore/pta-release.jks')
+def ptaKeystorePassword = System.getenv('PTA_KEYSTORE_PASSWORD') ?: 'pta-distribution-2026'
+def ptaKeyAliasName = System.getenv('PTA_KEY_ALIAS') ?: 'pta'
+def ptaKeyPasswordValue = System.getenv('PTA_KEY_PASSWORD') ?: ptaKeystorePassword
+def hasPtaKeystore = ptaKeystoreFile.exists()
+if (!hasPtaKeystore) {
+    logger.warn("PTA: keystore di distribuzione assente (${ptaKeystoreFile}); la build release usera la chiave debug.")
+}
+
 android {
     namespace 'it.pta.game'
     compileSdk 34
@@ -14,8 +27,8 @@ android {
         applicationId 'it.pta.game'
         minSdk 24
         targetSdk 34
-        versionCode 6
-        versionName '1.0.5'
+        versionCode 7
+        versionName '1.0.6'
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
         }
@@ -26,13 +39,27 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        if (hasPtaKeystore) {
+            release {
+                storeFile ptaKeystoreFile
+                storePassword ptaKeystorePassword
+                keyAlias ptaKeyAliasName
+                keyPassword ptaKeyPasswordValue
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
+
     buildTypes {
         debug {
             minifyEnabled false
         }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig hasPtaKeystore ? signingConfigs.release : signingConfigs.debug
         }
     }
 

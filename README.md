@@ -9,13 +9,14 @@ Motore: **libGDX 1.12.1 + renderer OpenGL ES 2.0 proprietario** (Java 17).
 Nessun asset di terze parti, nessun marchio, nessuna musica protetta: texture, modelli,
 personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 
-> **Release corrente:** [PTA 1.0.5 — solid city and road GPS](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/tag/v1.0.5) · [Scarica PTA-1.0.5.apk](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/download/v1.0.5/PTA-1.0.5.apk) (8,5 MB)
+> **Release corrente:** [PTA 1.0.6 — installable update](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/tag/v1.0.6) · [Scarica PTA-1.0.6.apk](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/download/v1.0.6/PTA-1.0.6.apk) (8,5 MB)
 >
-> La Release 1.0.5 rende leggibili le strade in tutti i LOD, solidi gli edifici con
+> La Release 1.0.6 rende leggibili le strade in tutti i LOD, solidi gli edifici con
 > collisione sul bordo reale dei poligoni OSM, sicuri gli ingressi/uscite degli interni
 > e disegna il GPS sulla rete stradale. Tutti i 71.844 edifici, 26.296 strade,
 > 17.679 elementi guidabili, aree, POI e 70 interni sono preservati.
-> APK debug installabile per arm64-v8a, armeabi-v7a e x86_64.
+> APK firmato con **una chiave di distribuzione stabile**, quindi installabile sopra le
+> versioni precedenti (firma v2+v3, arm64-v8a, armeabi-v7a, x86_64).
 
 ---
 
@@ -37,7 +38,7 @@ personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 | Audio procedurale con volumi separati | implementato |
 | APK installabile e pipeline GitHub Actions | build automatica nel workflow |
 
-Le verifiche automatiche 1.0.5 sono **20 test JVM verdi**: caricamento della mappa
+Le verifiche automatiche 1.0.6 sono **20 test JVM verdi**: caricamento della mappa
 reale, conteggi OSM invariati, collisione sul bordo di un muro lungo, push-out da un
 footprint, camminata e corsa contro una facciata, auto a 34 m/s contro un edificio,
 percorso GPS che non attraversa footprint, strade presenti e contrastate in LOD 0/1/2,
@@ -63,9 +64,21 @@ performance reali restano da fare: vedi [Limiti noti](#limiti-noti).
 | Connessione | non richiesta dopo l'installazione |
 | Spazio | APK 8,5 MB; circa 7,7 MB di mappa copiati nello storage interno al primo avvio |
 
-La Release `1.0.5` contiene un **APK debug** firmato con la chiave debug, pensato per
-l'installazione diretta e il collaudo. Per la distribuzione sugli store serve una
-build release firmata.
+### Firma dell'APK
+
+La Release `1.0.6` è un **APK release firmato** con la chiave di distribuzione
+`keystore/pta-release.jks` (alias `pta`, validità fino al 2056). La chiave è nel
+repository di proposito: senza un certificato stabile ogni runner GitHub Actions
+genera un `debug.keystore` nuovo, e un APK firmato con una chiave diversa **non può
+essere installato sopra** quello già presente sul telefono (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+È una chiave per la distribuzione diretta (sideload), non una chiave da store: chi
+pubblica su Play Store deve sostituirla con una propria, passata tramite
+`PTA_KEYSTORE_FILE`, `PTA_KEYSTORE_PASSWORD`, `PTA_KEY_ALIAS` e `PTA_KEY_PASSWORD`.
+
+L'APK 1.0.5 e precedenti sono firmati con chiavi diverse fra loro: per passare a
+1.0.6 bisogna **disinstallare una volta** la versione vecchia (i salvataggi interni
+vanno persi, restano solo se si esporta prima il file). Dalla 1.0.6 in poi gli
+aggiornamenti si installano sopra senza toccare i dati.
 
 ### Gestione della RAM
 
@@ -221,12 +234,14 @@ Requisiti: JDK 17, Android SDK con platform 34 e build-tools 34.0.0.
 export JAVA_HOME=/percorso/jdk-17
 export ANDROID_HOME=/percorso/android-sdk
 ./gradlew :core:test
-./gradlew :app:assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleDebug   # APK di collaudo, chiave debug locale
+./gradlew :app:assembleRelease # APK firmato con la chiave di distribuzione
+# APK: app/build/outputs/apk/release/app-release.apk
 ```
 
-Il workflow `.github/workflows/android.yml` esegue test, compila l'APK e lo pubblica
-come artifact **PTA-debug-apk** a ogni push su `main` (o manualmente da Actions →
+Il workflow `.github/workflows/android.yml` esegue test, compila l'APK release, ne
+verifica firma, `versionCode` e librerie native, e lo pubblica come artifact
+**PTA-apk** a ogni push su `main` (o manualmente da Actions →
 “PTA Android build” → Run workflow). I log e i report dei test sono conservati come
 artifact separato.
 
