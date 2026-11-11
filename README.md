@@ -116,6 +116,10 @@ Per un salto di minor o major basta scrivere il valore voluto in
 ./tools/release/bump_version.sh   # 1.0.6 (7) -> 1.0.7 (8), utile in locale
 ```
 
+Ogni push su `main` pubblica una release. Il commit del bot che riporta il nuovo
+numero è marcato in modo che GitHub non avvii un'altra build: non usare lo stesso
+marcatore nei commit normali, perché la release verrebbe saltata senza errori.
+
 ### Gestione della RAM
 
 La mappa completa non viene caricata come 71.844 oggetti Java.
