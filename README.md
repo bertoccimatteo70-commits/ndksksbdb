@@ -80,6 +80,26 @@ L'APK 1.0.5 e precedenti sono firmati con chiavi diverse fra loro: per passare a
 vanno persi, restano solo se si esporta prima il file). Dalla 1.0.6 in poi gli
 aggiornamenti si installano sopra senza toccare i dati.
 
+L'impronta attesa è in `keystore/signing-fingerprint.txt` e
+`tools/release/verify_apk.sh` **blocca la build** se l'APK non è firmato con quella
+chiave, se manca la firma v2 o se `versionCode`/`versionName` non coincidono con
+`app/build.gradle`:
+
+```bash
+export ANDROID_HOME=/percorso/android-sdk
+./tools/release/verify_apk.sh app/build/outputs/apk/release/app-release.apk
+./tools/release/verify_apk.sh PTA-1.0.5.apk --key-only   # controlla solo la firma
+```
+
+Il workflow lancia lo stesso controllo prima di caricare l'artifact e, se il tag
+esiste già, verifica la firma dell'APK pubblicato prima di sostituirlo.
+
+Regole per aggiornare un telefono già in uso: stessa `applicationId`, stessa chiave
+di firma, `versionCode` sempre crescente (Android rifiuta i downgrade con
+`INSTALL_FAILED_VERSION_DOWNGRADE`). Un APK compilato in locale con
+`assembleDebug` usa la chiave debug e **non** aggiorna l'installazione della release:
+installa `PTA-x.y.z.apk` della release oppure compila `assembleRelease`.
+
 ### Gestione della RAM
 
 La mappa completa non viene caricata come 71.844 oggetti Java.
