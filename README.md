@@ -9,9 +9,9 @@ Motore: **libGDX 1.12.1 + renderer OpenGL ES 2.0 proprietario** (Java 17).
 Nessun asset di terze parti, nessun marchio, nessuna musica protetta: texture, modelli,
 personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 
-> **Release corrente:** [PTA 1.0.6 — installable update](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/tag/v1.0.6) · [Scarica PTA-1.0.6.apk](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/download/v1.0.6/PTA-1.0.6.apk) (8,5 MB)
+> **Release corrente:** [ultima release](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/latest) — scarica `PTA-x.y.z.apk` dagli asset (8,5 MB). Il numero di versione è in [`version.properties`](version.properties) e viene incrementato dalla pipeline.
 >
-> La Release 1.0.6 rende leggibili le strade in tutti i LOD, solidi gli edifici con
+> La release corrente rende leggibili le strade in tutti i LOD, solidi gli edifici con
 > collisione sul bordo reale dei poligoni OSM, sicuri gli ingressi/uscite degli interni
 > e disegna il GPS sulla rete stradale. Tutti i 71.844 edifici, 26.296 strade,
 > 17.679 elementi guidabili, aree, POI e 70 interni sono preservati.
@@ -38,7 +38,7 @@ personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 | Audio procedurale con volumi separati | implementato |
 | APK installabile e pipeline GitHub Actions | build automatica nel workflow |
 
-Le verifiche automatiche 1.0.6 sono **20 test JVM verdi**: caricamento della mappa
+Le verifiche automatiche sono **20 test JVM verdi**: caricamento della mappa
 reale, conteggi OSM invariati, collisione sul bordo di un muro lungo, push-out da un
 footprint, camminata e corsa contro una facciata, auto a 34 m/s contro un edificio,
 percorso GPS che non attraversa footprint, strade presenti e contrastate in LOD 0/1/2,
@@ -99,6 +99,22 @@ di firma, `versionCode` sempre crescente (Android rifiuta i downgrade con
 `INSTALL_FAILED_VERSION_DOWNGRADE`). Un APK compilato in locale con
 `assembleDebug` usa la chiave debug e **non** aggiorna l'installazione della release:
 installa `PTA-x.y.z.apk` della release oppure compila `assembleRelease`.
+
+### Versione automatica
+
+`version.properties` è l'unica fonte di `versionCode` e `versionName`;
+`app/build.gradle` li legge da lì. A ogni push su `main` la pipeline esegue
+`tools/release/bump_version.sh`, che aumenta il `versionCode` di 1 e il patch di
+`versionName` (1.0.6 → 1.0.7), poi compila, verifica e pubblica la release con quel
+numero. Solo dopo la pubblicazione il bot committa il nuovo `version.properties`
+con `[skip ci]`, quindi il push di ritorno non innesca una seconda build; se la
+build fallisce la versione non viene consumata e il run successivo la riusa.
+Per un salto di minor o major basta scrivere il valore voluto in
+`version.properties` (es. `1.1.0`) e fare push: il bump riparte da lì.
+
+```bash
+./tools/release/bump_version.sh   # 1.0.6 (7) -> 1.0.7 (8), utile in locale
+```
 
 ### Gestione della RAM
 

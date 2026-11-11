@@ -116,15 +116,18 @@ if [ "$KEY_ONLY" -eq 1 ]; then
     exit 0
 fi
 
-GRADLE_VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode[[:space:]]\{1,\}\([0-9]\{1,\}\).*/\1/p' \
-    "$ROOT/app/build.gradle" | head -n 1)"
-GRADLE_VERSION_NAME="$(sed -n "s/^[[:space:]]*versionName[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" \
-    "$ROOT/app/build.gradle" | head -n 1)"
-if [ "$VERSION_CODE" != "$GRADLE_VERSION_CODE" ] || [ "$VERSION_NAME" != "$GRADLE_VERSION_NAME" ]; then
-    echo "ERRORE: l'APK e $VERSION_NAME ($VERSION_CODE) ma app/build.gradle dice $GRADLE_VERSION_NAME ($GRADLE_VERSION_CODE)." >&2
+VERSION_FILE="$ROOT/version.properties"
+if [ ! -f "$VERSION_FILE" ]; then
+    echo "ERRORE: manca $VERSION_FILE" >&2
     exit 1
 fi
-echo "Versione:    $VERSION_NAME ($VERSION_CODE), allineata a app/build.gradle"
+SOURCE_VERSION_CODE="$(sed -n 's/^versionCode=\([0-9]\{1,\}\)$/\1/p' "$VERSION_FILE" | head -n 1)"
+SOURCE_VERSION_NAME="$(sed -n 's/^versionName=\(.*\)$/\1/p' "$VERSION_FILE" | head -n 1)"
+if [ "$VERSION_CODE" != "$SOURCE_VERSION_CODE" ] || [ "$VERSION_NAME" != "$SOURCE_VERSION_NAME" ]; then
+    echo "ERRORE: l'APK e $VERSION_NAME ($VERSION_CODE) ma version.properties dice $SOURCE_VERSION_NAME ($SOURCE_VERSION_CODE)." >&2
+    exit 1
+fi
+echo "Versione:    $VERSION_NAME ($VERSION_CODE), allineata a version.properties"
 
 if [ -n "${GITHUB_ENV:-}" ]; then
     {
