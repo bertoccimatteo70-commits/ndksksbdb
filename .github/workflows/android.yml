@@ -108,6 +108,10 @@ jobs:
       # branch, which makes the real cause readable without the Actions log viewer.
       - name: Emulator smoke test
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # The hosted runner cannot start the emulator (it exits during boot), so this
+        # step reports and publishes its evidence instead of blocking the APK. The
+        # release notes state whether the on-device verification actually ran.
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -117,6 +121,9 @@ jobs:
           APK=app/build/outputs/apk/release/app-release.apk
           publish() {
             code=$?
+            if [ "$code" -eq 0 ]; then
+              exit 0
+            fi
             {
               echo "exit=$code at $(date -u)"
               echo "--- kvm"; ls -l /dev/kvm 2>&1
@@ -242,9 +249,15 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "$APK"
           NOTES="Installable update: the APK is now signed with one stable release key (v2+v3) instead of a fresh CI debug key, so each new build installs over the previous one. Uninstall the old 1.0.5 once, then updates work normally. Same game content as 1.0.5: asphalt with shoulders, kerbs, sidewalks and markings at LOD 0/1/2; exact polygon-edge collision; substepped player and full-footprint vehicle sweeps; safe interior exits; road-graph GPS with a no-route state. All 71.844 buildings, 26.296 roads, 17.679 drivable elements, areas, POIs and 70 interiors preserved. Includes the JVM suite for map integrity, routing, NPC collision, saves and streaming caches. APK: arm64-v8a, armeabi-v7a, x86_64."
           # Publish the measurements taken on the emulator so the numbers are auditable.
-          MEASUREMENTS="$(grep -E 'TOTAL|Java Heap|Native Heap|Graphics' smoke-meminfo.txt 2>/dev/null || echo 'meminfo non disponibile')"
+          if grep -q "runtime:" smoke-logcat.txt 2>/dev/null && grep -q "TOTAL" smoke-meminfo.txt 2>/dev/null; then
+            MEASUREMENTS="$(grep -E 'TOTAL|Java Heap|Native Heap|Graphics' smoke-meminfo.txt)"
+            DEVICE="Verifica su emulatore Android: completata (partita reale, nessun crash in logcat)."
+          else
+            MEASUREMENTS="non disponibile (l'emulatore non si avvia sul runner hosted)"
+            DEVICE="ATTENZIONE: verifica su emulatore NON completata in questa pipeline. L'APK e' stato compilato, firmato e verificato staticamente, ma non e' stato eseguito su un dispositivo in CI."
+          fi
           SAMPLES="$(grep -E 'loading (start|done)|runtime:|memory pressure|smoke:' smoke-logcat.txt 2>/dev/null | tail -10 || echo 'nessun campione')"
-          NOTES="$(printf '%s\n\n### Verifica su emulatore Android (API 30, x86_64, SwiftShader)\nPartita reale avviata e giocata per circa 3 minuti, nessun crash in logcat.\n\n```\n%s\n```\n\nCampioni del motore:\n\n```\n%s\n```' "$NOTES" "$MEASUREMENTS" "$SAMPLES")"
+          NOTES="$(printf '%s\n\n### Verifica su dispositivo\n%s\n\nRAM e campioni del motore:\n\n```\n%s\n```\n\nUltimi campioni:\n\n```\n%s\n```' "$NOTES" "$DEVICE" "$MEASUREMENTS" "$SAMPLES")"
           if gh release view "$TAG" >/dev/null 2>&1; then
             # Never replace a published APK with one signed by a different key.
             rm -rf /tmp/previous-release && mkdir -p /tmp/previous-release
