@@ -247,7 +247,7 @@ jobs:
           TAG="v${VERSION}"
           APK="PTA-${VERSION}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$APK"
-          NOTES="Installable update: the APK is now signed with one stable release key (v2+v3) instead of a fresh CI debug key, so each new build installs over the previous one. Uninstall the old 1.0.5 once, then updates work normally. Same game content as 1.0.5: asphalt with shoulders, kerbs, sidewalks and markings at LOD 0/1/2; exact polygon-edge collision; substepped player and full-footprint vehicle sweeps; safe interior exits; road-graph GPS with a no-route state. All 71.844 buildings, 26.296 roads, 17.679 drivable elements, areas, POIs and 70 interiors preserved. Includes the JVM suite for map integrity, routing, NPC collision, saves and streaming caches. APK: arm64-v8a, armeabi-v7a, x86_64."
+          NOTES="Streaming a zone con priorita' direzionale, isteresi LOD e rilascio automatico delle zone lontane; watchdog di memoria con budget sul 72% dell'heap, rilascio delle zone piu' distanti e degradazione del preset; schermata di caricamento con progresso reale (zone pronte su totali, niente percentuali inventate); salvataggi atomici con recupero dal file .bak e valori sanitizzati; audio sintetizzato on demand con una sola traccia in RAM; collisioni NPC e navigazione su grafo stradale con sensi unici, prossima svolta e mappa a schermo intero. APK firmato (v2+v3) per arm64-v8a, armeabi-v7a e x86_64."
           # Publish the measurements taken on the emulator so the numbers are auditable.
           if grep -q "runtime:" smoke-logcat.txt 2>/dev/null && grep -q "TOTAL" smoke-meminfo.txt 2>/dev/null; then
             MEASUREMENTS="$(grep -E 'TOTAL|Java Heap|Native Heap|Graphics' smoke-meminfo.txt)"
