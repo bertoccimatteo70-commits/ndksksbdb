@@ -47,9 +47,6 @@ jobs:
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
           "$SDKM" --list_installed | head -30
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-
       - name: Make gradlew executable
         run: chmod +x ./gradlew tools/release/bump_version.sh tools/release/verify_apk.sh
 
@@ -144,9 +141,9 @@ jobs:
             while IFS= read -r line; do
               echo "::error::$(echo "$line" | cut -c1-700)"
               n=$((n + 1))
-              [ "$n" -ge 6 ] && break
+              [ "$n" -ge 3 ] && break
             done <<EOF2
-          $(grep -iE "error|fatal|cannot|failed|kvm|lib" "$1" | tail -n 6)
+          $(grep -iE "error|fatal|cannot|failed|kvm|lib|accel" "$1" | tail -n 3)
           EOF2
           }
           fail() {
@@ -166,7 +163,7 @@ jobs:
             -k "system-images;android-30;default;x86_64" -d pixel_2 --force > avd.log 2>&1 \
             || fail "AVD creation failed"
           "$SDK/emulator/emulator" -avd pta -no-window -no-audio -no-boot-anim -no-snapshot \
-            -gpu swiftshader_indirect -no-metrics -accel on -verbose > emulator.log 2>&1 &
+            -gpu off -no-metrics -accel auto -verbose > emulator.log 2>&1 &
           EMU=$!
           booted=0
           for i in $(seq 1 72); do
@@ -199,7 +196,7 @@ jobs:
           [ "$ok" = "1" ] || fail "startup complete never appeared"
           sleep 25
           adb exec-out screencap -p > smoke-loading.png || true
-          sleep 120
+          sleep 90
           adb shell dumpsys meminfo it.pta.game > smoke-meminfo.txt || true
           adb exec-out screencap -p > smoke-gameplay.png || true
           adb logcat -d -s PTA:* > smoke-logcat.txt || true
