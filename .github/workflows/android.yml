@@ -138,10 +138,27 @@ jobs:
             exit "$code"
           }
           trap publish EXIT
+          dump_log() {
+            [ -f "$1" ] || return 0
+            n=0
+            while IFS= read -r line; do
+              echo "::error::$(echo "$line" | cut -c1-700)"
+              n=$((n + 1))
+              [ "$n" -ge 6 ] && break
+            done <<EOF2
+          $(grep -iE "error|fatal|cannot|failed|kvm|lib" "$1" | tail -n 6)
+          EOF2
+          }
           fail() {
             echo "::error::$1"
             exit 1
           }
+          # The emulator links against these at start-up.
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          sudo apt-get install -y -qq libpulse0 libgl1 libnss3 libxcomposite1 libxcursor1 \
+            libxi6 libxtst6 libxrandr2 libx11-6 libasound2t64 libxcb1 libxcb-xfixes0 \
+            >/dev/null 2>&1 || true
+          echo "kvm: $(ls -l /dev/kvm 2>&1 || true)"
           timeout 600 "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "emulator" \
             "platform-tools" "system-images;android-30;default;x86_64" < /dev/null \
             > sdk-install.log 2>&1 || fail "sdkmanager failed"
@@ -149,11 +166,14 @@ jobs:
             -k "system-images;android-30;default;x86_64" -d pixel_2 --force > avd.log 2>&1 \
             || fail "AVD creation failed"
           "$SDK/emulator/emulator" -avd pta -no-window -no-audio -no-boot-anim -no-snapshot \
-            -gpu swiftshader_indirect -no-metrics -accel on > emulator.log 2>&1 &
+            -gpu swiftshader_indirect -no-metrics -accel on -verbose > emulator.log 2>&1 &
           EMU=$!
           booted=0
           for i in $(seq 1 72); do
             if ! kill -0 "$EMU" 2>/dev/null; then
+              wait "$EMU" 2>/dev/null
+              echo "::error::the emulator exited with code $? after $((i * 5))s"
+              dump_log emulator.log
               fail "the emulator process exited during boot"
             fi
             if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
