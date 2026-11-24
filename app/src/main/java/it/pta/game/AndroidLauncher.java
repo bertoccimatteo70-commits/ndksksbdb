@@ -17,6 +17,11 @@ public final class AndroidLauncher extends AndroidApplication {
         config.useImmersiveMode = true;
         config.numSamples = 0;
         config.useWakelock = true;
-        initialize(new PtaGame(), config);
+        PtaGame game = new PtaGame();
+        // CI hook: `adb shell am start ... --ez pta.smoke true` boots straight into a
+        // new game and walks around, so the pipeline exercises the real game loop.
+        game.setSmokeTest(getIntent() != null
+                && getIntent().getBooleanExtra("pta.smoke", false));
+        initialize(game, config);
     }
 }

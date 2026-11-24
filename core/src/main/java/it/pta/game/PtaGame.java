@@ -56,6 +56,13 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     private float loadingTime;
     private float degradeCooldown;
     private float memoryLogTimer;
+    private boolean smokeTest;
+    private float smokeTime;
+
+    /** Enables the automated CI walkthrough (see AndroidLauncher). */
+    public void setSmokeTest(boolean value) {
+        smokeTest = value;
+    }
 
     @Override
     public void create() {
@@ -110,6 +117,10 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         audio.setIndoors(false);
         menuAngle = 0.7f;
         renderer.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        if (smokeTest) {
+            Gdx.app.log("PTA", "smoke: starting an automated new game");
+            newGame();
+        }
     }
 
     @Override
@@ -227,6 +238,9 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
 
     private void updateGameplay(float delta) {
         pollHardware();
+        if (smokeTest) {
+            driveSmoke(delta);
+        }
         if (input.pause) {
             input.pause = false;
             if (ui.isGameplay()) {
@@ -268,6 +282,23 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         }
         if (world.layout.editing && ui.isGameplay()) {
             // keep controls visible while repositioning, but freeze the world
+        }
+    }
+
+    /**
+     * CI walkthrough: runs a curve at walking/running speed so the streamer loads and
+     * evicts zones, LOD switches and NPC collision keep running for minutes. Nothing
+     * here is compiled into a normal session (the flag comes from the intent extra).
+     */
+    private void driveSmoke(float delta) {
+        smokeTime += delta;
+        input.moveY = 1f;
+        input.run = smokeTime < 90f;
+        rig.yaw += delta * (0.09f + 0.05f * MathUtils.sin(smokeTime * 0.35f));
+        if (smokeTime > 120f && smokeTime - delta <= 120f) {
+            Player p = world.player();
+            Gdx.app.log("PTA", "smoke: walked 120s, player=" + p.x + "," + p.z
+                    + " " + renderer.chunkManager().stats());
         }
     }
 
