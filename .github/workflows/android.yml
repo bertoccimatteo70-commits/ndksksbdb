@@ -93,7 +93,8 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       # The emulator is driven directly instead of through a third-party action so every
-      # failure is reported as an annotation with the real reason.
+      # failure is reported as an annotation with the real reason, and no command can
+      # wait forever: each wait is bounded and checks that the emulator is still alive.
       - name: Emulator smoke test
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
@@ -104,30 +105,39 @@ jobs:
           fail() {
             echo "::error::$1"
             if [ -f emulator.log ]; then
-              echo "::error::emulator: $(tail -n 3 emulator.log | tr '\n' ' ' | cut -c1-900)"
+              echo "::error::emulator: $(tail -n 4 emulator.log | tr '\n' ' ' | cut -c1-900)"
             fi
             adb logcat -d -s PTA:* 2>/dev/null | tail -n 4 || true
             exit 1
           }
           echo "kvm: $(ls -l /dev/kvm 2>&1 || true)"
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "emulator" "platform-tools" \
-            "system-images;android-30;google_apis;x86_64" > sdk-install.log 2>&1 \
+          # The emulator links against these at start-up; present on most images, but a
+          # missing one is exactly the kind of failure worth making explicit.
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          sudo apt-get install -y -qq libpulse0 libgl1 libnss3 libxcomposite1 libxcursor1 \
+            libxi6 libxtst6 libxrandr2 libx11-6 libasound2t64 >/dev/null 2>&1 || true
+          timeout 900 "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "emulator" \
+            "platform-tools" "system-images;android-30;default;x86_64" > sdk-install.log 2>&1 \
             || fail "sdkmanager failed: $(tail -n 2 sdk-install.log | tr '\n' ' ' | cut -c1-600)"
           echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n pta \
-            -k "system-images;android-30;google_apis;x86_64" -d pixel_2 --force > avd.log 2>&1 \
+            -k "system-images;android-30;default;x86_64" -d pixel_2 --force > avd.log 2>&1 \
             || fail "AVD creation failed: $(tail -n 2 avd.log | tr '\n' ' ' | cut -c1-600)"
           "$SDK/emulator/emulator" -avd pta -no-window -no-audio -no-boot-anim -no-snapshot \
-            -gpu swiftshader_indirect -no-metrics > emulator.log 2>&1 &
-          adb wait-for-device || fail "adb wait-for-device failed"
+            -gpu swiftshader_indirect -no-metrics -accel on > emulator.log 2>&1 &
+          EMU=$!
+          echo "emulator pid $EMU"
           booted=0
           for i in $(seq 1 90); do
+            if ! kill -0 "$EMU" 2>/dev/null; then
+              fail "the emulator exited during boot: $(grep -m2 -E 'ERROR|error|failed|Failed' emulator.log | tr '\n' ' ' | cut -c1-600)"
+            fi
             if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
               booted=1
               break
             fi
             sleep 5
           done
-          [ "$booted" = "1" ] || fail "the emulator did not boot within 7.5 minutes"
+          [ "$booted" = "1" ] || fail "the emulator did not boot within 7.5 minutes (devices: $(adb devices | tr '\n' ' '))"
           adb shell input keyevent 82 >/dev/null 2>&1 || true
           adb install -r "$APK" > install.log 2>&1 \
             || fail "adb install failed: $(tail -n 3 install.log | tr '\n' ' ' | cut -c1-600)"
