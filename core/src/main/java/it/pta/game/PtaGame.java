@@ -50,6 +50,12 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     private SpriteBatch fatalBatch;
     private BitmapFont fatalFont;
     private String fatalMessage = "";
+    private final MemoryBudget memory = new MemoryBudget();
+    private boolean loading;
+    private boolean loadingNewGame;
+    private float loadingTime;
+    private float degradeCooldown;
+    private float memoryLogTimer;
 
     @Override
     public void create() {
@@ -147,6 +153,13 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
             ui.act(delta);
         }
 
+        // The loading screen is driven from the render loop: the world keeps streaming
+        // and uploading chunks every frame, so the bar follows real work instead of
+        // blocking the GL thread on a synchronous preload.
+        if (mode == Mode.PLAY && loading) {
+            advanceLoading(delta);
+        }
+
         renderScene(delta);
 
         if (mode == Mode.INTRO) {
@@ -161,6 +174,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
             ui.draw();
         }
         monitorPerformance(delta);
+        updateMemory(delta);
     }
 
     private void renderScene(float delta) {
@@ -266,6 +280,46 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         float ground = indoor ? p.y : map.heightAt(p.x, p.z);
         rig.update(p.x, vy, p.z, ground, inVehicle,
                 inVehicle ? p.vehicle.type.length : 0f, indoor ? null : map, delta);
+    }
+
+    /**
+     * Memory watchdog. When the heap approaches the budget the game first drops the
+     * farthest chunks (and their CPU geometry), then lowers the graphics preset: the
+     * playing field stays identical, only what is resident shrinks.
+     */
+    private void updateMemory(float delta) {
+        MemoryBudget.Pressure pressure = memory.sample(delta);
+        memory.chunkVertexMb = renderer.chunkManager().vertexMemoryBytes() / 1048576f;
+        memoryLogTimer += delta;
+        if (memoryLogTimer > 20f && mode == Mode.PLAY) {
+            memoryLogTimer = 0f;
+            Gdx.app.log("PTA", "runtime: " + memory.summary() + " "
+                    + renderer.chunkManager().stats() + " fps=" + Gdx.graphics.getFramesPerSecond()
+                    + " preset=" + settings.preset.label);
+        }
+        if (pressure == MemoryBudget.Pressure.OK || mode != Mode.PLAY) {
+            return;
+        }
+        if (degradeCooldown > 0f) {
+            degradeCooldown -= delta;
+            return;
+        }
+        degradeCooldown = 6f;
+        memory.countDegradation();
+        int keep = pressure == MemoryBudget.Pressure.CRITICAL ? 40 : 90;
+        int removed = renderer.chunkManager().trim(rig.camera.position, keep);
+        if (pressure == MemoryBudget.Pressure.CRITICAL && settings.preset != Settings.Preset.BASE) {
+            Settings.Preset lower = Settings.Preset.values()[
+                    Math.max(0, settings.preset.ordinal() - 1)];
+            settings.applyPreset(lower);
+            settings.save();
+            applySettings();
+            ui.showPerformance(lower, "Memoria quasi esaurita: qualità ridotta a "
+                    + lower.label + " (risoluzione " + lower.renderHeight
+                    + "p) per mantenere il gioco stabile.");
+        }
+        Gdx.app.log("PTA", "memory pressure " + pressure + ": trimmed " + removed
+                + " chunks, " + memory.summary());
     }
 
     private void monitorPerformance(float delta) {
@@ -406,21 +460,56 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         rig.setFirstPerson(settings.firstPersonDefault);
         rig.yaw = world.spawnHeading;
         rig.pitch = 0.24f;
-        ui.showGameplay();
         audio.setTrack(AudioEngine.EXPLORE);
-        MissionSystem.Mission first = world.missions.nextMainMission();
-        if (first != null) {
-            world.startMission(first);
+        updateCamera(0.016f);
+        beginLoading(true, "Nuova partita · preparazione della città");
+    }
+
+    private void beginLoading(boolean newGame, String text) {
+        loading = true;
+        loadingNewGame = newGame;
+        loadingTime = 0f;
+        ui.loadingProgress = 0f;
+        ui.loadingDetail = "";
+        ui.showLoading(text);
+        input.reset();
+        Gdx.app.log("PTA", "loading start: " + text + " position=" + world.player().x
+                + "," + world.player().z);
+    }
+
+    private void advanceLoading(float delta) {
+        loadingTime += delta;
+        float progress = renderer.chunkManager().progressAround(rig.camera.position, 260f);
+        int near = Math.max(1, renderer.chunkManager().chunksAround(rig.camera.position, 260f));
+        int ready = Math.round(near * progress);
+        ui.loadingProgress = progress;
+        ui.loadingDetail = ready + " / " + near + " zone pronte · "
+                + renderer.chunkManager().loadedChunks() + " in memoria";
+        // A slow device must not sit on the loading screen forever: after 25 s the game
+        // enters anyway and the streaming keeps filling in behind the camera.
+        if ((progress >= 0.999f && loadingTime > 0.4f) || loadingTime > 25f) {
+            finishLoading(progress);
         }
+    }
+
+    private void finishLoading(float progress) {
+        loading = false;
+        ui.showGameplay();
+        if (loadingNewGame) {
+            MissionSystem.Mission first = world.missions.nextMainMission();
+            if (first != null) {
+                world.startMission(first);
+            }
+        }
+        loadingNewGame = false;
         updateCamera(0.016f);
         Player p = world.player();
-        Gdx.app.log("PTA", "new game: player=" + p.x + "," + p.y + "," + p.z
+        Gdx.app.log("PTA", "loading done at " + (int) (progress * 100f) + "%: player="
+                + p.x + "," + p.y + "," + p.z
                 + " ground=" + map.heightAt(p.x, p.z)
                 + " blocked=" + map.blocked(p.x, p.z, 0.55f)
-                + " yaw=" + rig.yaw
-                + " camera=" + rig.camera.position
-                + " cameraBlocked=" + map.blocked(rig.camera.position.x, rig.camera.position.z, 0.4f)
-                + " chunks=" + renderer.chunkManager().loadedChunks());
+                + " " + renderer.chunkManager().stats()
+                + " " + memory.summary());
     }
 
     @Override
@@ -442,13 +531,13 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         }
         world.readSave(data);
         mode = Mode.PLAY;
-        ui.showGameplay();
         rig.setFirstPerson(settings.firstPersonDefault);
         rig.yaw = 0;
         input.reset();
         updateCamera(0.016f);
         audio.setTrack(AudioEngine.EXPLORE);
         world.notify("Partita caricata");
+        beginLoading(false, "Caricamento partita · streaming della città");
     }
 
     @Override
@@ -470,7 +559,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
 
     @Override
     public void resume() {
-        if (mode == Mode.PLAY) {
+        if (mode == Mode.PLAY && !loading) {
             ui.showGameplay();
         }
     }
@@ -480,6 +569,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         if (mode == Mode.PLAY) {
             save(0);
         }
+        loading = false;
         mode = Mode.MENU;
         campaignFinished = false;
         ui.showMenu();
@@ -628,6 +718,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         if (world != null) {
             world.dispose();
         }
+        Gdx.app.log("PTA", "final memory: " + memory.summary());
         if (ui != null) {
             ui.stage.dispose();
         }

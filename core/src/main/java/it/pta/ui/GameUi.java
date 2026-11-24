@@ -76,6 +76,9 @@ public final class GameUi {
     private String resultTitle = "";
     private String resultMessage = "";
     public String loadingText = "";
+    public float loadingProgress;
+    public String loadingDetail = "";
+    public final LoadingView loadingView = new LoadingView();
 
     public GameUi(UiAssets assets, Settings settings, SaveManager saves, InputState input,
                   World world, Callbacks callbacks) {
@@ -1315,8 +1318,34 @@ public final class GameUi {
         Table box = new Table();
         box.add(new Label("PTA", a.skin, "huge")).row();
         box.add(new Label(loadingText, a.skin, "default")).padTop(a.dp(10)).row();
+        box.add(loadingView).size(a.dp(380), a.dp(10)).padTop(a.dp(22)).row();
         root.center();
         root.add(box);
+    }
+
+    /**
+     * Loading bar fed by the streaming layer. The fill is the fraction of nearby chunk
+     * meshes that are really resident, and the detail line reports the same numbers, so
+     * the screen never shows a progress value the engine is not actually at.
+     */
+    public final class LoadingView extends Actor {
+        @Override
+        public void draw(Batch batch, float parentAlpha) {
+            float w = getWidth();
+            float h = getHeight();
+            batch.setColor(0.10f, 0.14f, 0.20f, 0.95f);
+            batch.draw(a.white, getX(), getY(), w, h);
+            float fill = MathUtils.clamp(loadingProgress, 0f, 1f);
+            if (fill > 0f) {
+                batch.setColor(0.30f, 0.78f, 0.92f, 1f);
+                batch.draw(a.white, getX(), getY(), Math.max(a.dp(2), w * fill), h);
+            }
+            batch.setColor(Color.WHITE);
+            a.small.setColor(0.85f, 0.92f, 0.98f, 0.95f);
+            a.small.draw(batch, loadingDetail, getX(), getY() - a.dp(9));
+            a.small.setColor(0.70f, 0.80f, 0.90f, 0.95f);
+            a.small.draw(batch, (int) (fill * 100f) + "%", getX() + w - a.dp(36), getY() - a.dp(9));
+        }
     }
 
     private TextButton button(String text, Runnable action) {

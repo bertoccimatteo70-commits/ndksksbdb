@@ -14,7 +14,7 @@ jobs:
     # The version-bump commit is pushed with [skip ci]: nothing to rebuild there.
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 70
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -82,6 +82,62 @@ jobs:
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
+      # Real-device gate: a release is published only if the APK boots on an Android
+      # emulator, survives the intro, reports its memory footprint and leaves no crash
+      # in logcat. The evidence is uploaded as an artifact.
+      - name: Enable KVM
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Emulator smoke test
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: default
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          script: |
+            set -euo pipefail
+            adb install -r app/build/outputs/apk/release/app-release.apk
+            adb logcat -c
+            adb shell am start -W -n it.pta.game/.AndroidLauncher
+            for i in $(seq 1 72); do
+              if adb logcat -d -s PTA:* | grep -q "startup complete"; then break; fi
+              sleep 5
+            done
+            adb logcat -d -s PTA:* > smoke-logcat.txt
+            grep "startup complete" smoke-logcat.txt
+            grep -E "startup:|ambience|gps graph" smoke-logcat.txt | tail -20 || true
+            if adb logcat -d -b crash | grep -q "it.pta.game"; then
+              adb logcat -d -b crash
+              echo "::error::PTA crashed during the smoke test"
+              exit 1
+            fi
+            adb shell dumpsys meminfo it.pta.game > smoke-meminfo.txt
+            grep -E "TOTAL|Java Heap|Native Heap|Graphics" smoke-meminfo.txt || true
+            adb exec-out screencap -p > smoke-intro.png
+            sleep 25
+            adb logcat -d -s PTA:* | tail -30
+            adb exec-out screencap -p > smoke-after-intro.png
+            adb shell dumpsys meminfo it.pta.game | grep -E "TOTAL|Native Heap" || true
+
+      - name: Upload device smoke evidence
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTA-device-smoke
+          path: |
+            smoke-logcat.txt
+            smoke-meminfo.txt
+            smoke-intro.png
+            smoke-after-intro.png
+          if-no-files-found: ignore
+
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
@@ -91,7 +147,7 @@ jobs:
           TAG="v${VERSION}"
           APK="PTA-${VERSION}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$APK"
-          NOTES="Installable update: the APK is now signed with one stable release key (v2+v3) instead of a fresh CI debug key, so each new build installs over the previous one. Uninstall the old 1.0.5 once, then updates work normally. Same game content as 1.0.5: asphalt with shoulders, kerbs, sidewalks and markings at LOD 0/1/2; exact polygon-edge collision; substepped player and full-footprint vehicle sweeps; safe interior exits; road-graph GPS with a no-route state. All 71.844 buildings, 26.296 roads, 17.679 drivable elements, areas, POIs and 70 interiors preserved. Includes 20 JVM tests. APK: arm64-v8a, armeabi-v7a, x86_64."
+          NOTES="Installable update: the APK is now signed with one stable release key (v2+v3) instead of a fresh CI debug key, so each new build installs over the previous one. Uninstall the old 1.0.5 once, then updates work normally. Same game content as 1.0.5: asphalt with shoulders, kerbs, sidewalks and markings at LOD 0/1/2; exact polygon-edge collision; substepped player and full-footprint vehicle sweeps; safe interior exits; road-graph GPS with a no-route state. All 71.844 buildings, 26.296 roads, 17.679 drivable elements, areas, POIs and 70 interiors preserved. Includes the JVM suite for map integrity, routing, NPC collision, saves and streaming caches. APK: arm64-v8a, armeabi-v7a, x86_64."
           if gh release view "$TAG" >/dev/null 2>&1; then
             # Never replace a published APK with one signed by a different key.
             rm -rf /tmp/previous-release && mkdir -p /tmp/previous-release

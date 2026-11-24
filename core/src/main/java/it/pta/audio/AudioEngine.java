@@ -53,9 +53,8 @@ public final class AudioEngine implements Disposable {
             Gdx.app.error("PTA", "audio device unavailable", e);
             enabled = false;
         }
-        for (int i = 0; i < tracks.length; i++) {
-            tracks[i] = renderTrack(i);
-        }
+        // Tracks are rendered on demand in the mixer thread: a full soundtrack is a
+        // few MB of floats and only one is audible at a time.
         loadAmbience();
         if (enabled) {
             running = true;
@@ -212,18 +211,23 @@ public final class AudioEngine implements Disposable {
 
     private void mixLoop() {
         float[] block = new float[BLOCK];
-        float[] music = tracks[EXPLORE];
+        float[] music = null;
         int lastTrack = -1;
         while (running) {
             int t = track;
             if (t != lastTrack) {
-                music = tracks[t];
+                music = trackFor(t);
                 musicPos = 0;
                 lastTrack = t;
             }
-            for (int i = 0; i < BLOCK; i++) {
-                int pos = (int) ((musicPos + i) % music.length);
-                block[i] = music[pos] * musicGain;
+            if (music == null || music.length == 0) {
+                java.util.Arrays.fill(block, 0f);
+            }
+            if (music != null && music.length > 0) {
+                for (int i = 0; i < BLOCK; i++) {
+                    int pos = (int) ((musicPos + i) % music.length);
+                    block[i] = music[pos] * musicGain;
+                }
             }
             // ambient bed: filtered noise + occasional birds
             for (int i = 0; i < BLOCK; i++) {
@@ -277,6 +281,25 @@ public final class AudioEngine implements Disposable {
             }
             musicPos += BLOCK;
         }
+    }
+
+    /**
+     * Returns the buffer for a track, synthesising it the first time it is needed and
+     * releasing the previous one: memory holds at most one soundtrack.
+     */
+    private float[] trackFor(int kind) {
+        if (kind < 0 || kind >= tracks.length) {
+            kind = EXPLORE;
+        }
+        if (tracks[kind] == null) {
+            for (int i = 0; i < tracks.length; i++) {
+                if (i != kind) {
+                    tracks[i] = null;
+                }
+            }
+            tracks[kind] = renderTrack(kind);
+        }
+        return tracks[kind];
     }
 
     private void enqueue(float[] samples) {
@@ -471,6 +494,7 @@ public final class AudioEngine implements Disposable {
                 m.dispose();
             }
         }
+        java.util.Arrays.fill(tracks, null);
         if (device != null) {
             device.dispose();
         }

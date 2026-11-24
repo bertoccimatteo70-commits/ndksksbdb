@@ -438,6 +438,76 @@ public final class ChunkManager implements Disposable {
         return chunks.size();
     }
 
+    /**
+     * Real loading progress for the loading screen: the fraction of the chunks inside
+     * {@code radius} whose meshes are already resident. Only counts what the streaming
+     * layer actually has, so the number is never invented.
+     */
+    public float progressAround(Vector3 pos, float radius) {
+        int total = 0;
+        int ready = 0;
+        int cx = map.cx(pos.x), cz = map.cz(pos.z);
+        int r = Math.max(1, (int) Math.ceil(radius / map.chunkSize));
+        for (int z = cz - r; z <= cz + r; z++) {
+            for (int c = cx - r; c <= cx + r; c++) {
+                float ccx = (c + 0.5f) * map.chunkSize;
+                float ccz = (z + 0.5f) * map.chunkSize;
+                if (Math.hypot(ccx - pos.x, ccz - pos.z) > radius) {
+                    continue;
+                }
+                total++;
+                Chunk ch = chunks.get(key(c, z));
+                if (ch != null && ch.parts != null) {
+                    ready++;
+                }
+            }
+        }
+        return total == 0 ? 1f : ready / (float) total;
+    }
+
+    public int chunksAround(Vector3 pos, float radius) {
+        int total = 0;
+        int cx = map.cx(pos.x), cz = map.cz(pos.z);
+        int r = Math.max(1, (int) Math.ceil(radius / map.chunkSize));
+        for (int z = cz - r; z <= cz + r; z++) {
+            for (int c = cx - r; c <= cx + r; c++) {
+                float ccx = (c + 0.5f) * map.chunkSize;
+                float ccz = (z + 0.5f) * map.chunkSize;
+                if (Math.hypot(ccx - pos.x, ccz - pos.z) <= radius) {
+                    total++;
+                }
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Memory pressure response: drops the farthest chunks down to half the live budget
+     * and releases the CPU geometry of everything that leaves. Called by the memory
+     * watchdog, never on the worker threads.
+     */
+    public int trim(Vector3 pos, int keepChunks) {
+        int keep = Math.max(9, Math.min(maxLiveChunks, keepChunks));
+        if (chunks.size() <= keep) {
+            return 0;
+        }
+        ArrayList<Chunk> live = new ArrayList<>(chunks.values());
+        live.sort((a, b) -> Float.compare(
+                (float) Math.hypot(b.centerX - pos.x, b.centerZ - pos.z),
+                (float) Math.hypot(a.centerX - pos.x, a.centerZ - pos.z)));
+        int removed = 0;
+        for (int i = 0; i < live.size() - keep; i++) {
+            Chunk c = live.get(i);
+            disposeMeshes(c);
+            chunks.remove(key(c.cx, c.cz));
+            c.geometry = null;
+            map.releaseChunk(c.cx, c.cz);
+            evicted++;
+            removed++;
+        }
+        return removed;
+    }
+
     public int vertexMemoryBytes() {
         int n = 0;
         for (Chunk c : chunks.values()) {
