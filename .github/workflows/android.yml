@@ -13,7 +13,7 @@ jobs:
   build:
     # The version-bump commit is pushed with [skip ci]: nothing to rebuild there.
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 70
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
@@ -92,60 +92,74 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The emulator is driven directly instead of through a third-party action so every
+      # failure is reported as an annotation with the real reason.
       - name: Emulator smoke test
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          arch: x86_64
-          target: default
-          disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
-          # The runner executes this with /usr/bin/sh (dash), so no pipefail and no bashisms.
-          script: |
-            set -e
-            adb install -r app/build/outputs/apk/release/app-release.apk
-            adb logcat -c
-            adb shell am start -W -n it.pta.game/.AndroidLauncher --ez pta.smoke true
-            ok=0
-            i=1
-            while [ $i -le 60 ]; do
-              if adb logcat -d -s PTA:* | grep -q "startup complete"; then ok=1; break; fi
-              sleep 5
-              i=$((i + 1))
-            done
-            adb logcat -d -s PTA:* > smoke-startup.txt || true
-            if [ "$ok" != "1" ]; then
-              echo "::error::PTA did not reach startup complete"
-              tail -80 smoke-startup.txt || true
-              exit 1
+        shell: bash
+        run: |
+          set -uo pipefail
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          APK=app/build/outputs/apk/release/app-release.apk
+          fail() {
+            echo "::error::$1"
+            if [ -f emulator.log ]; then
+              echo "::error::emulator: $(tail -n 3 emulator.log | tr '\n' ' ' | cut -c1-900)"
             fi
-            echo "--- startup ---"
-            grep -E "startup:|smoke:" smoke-startup.txt | tail -20 || true
-            sleep 30
-            adb exec-out screencap -p > smoke-loading.png || true
-            # The smoke intent starts a real new game and walks the player around:
-            # this exercises streaming, LOD, collisions and the memory watchdog.
-            sleep 150
-            adb shell dumpsys meminfo it.pta.game > smoke-meminfo.txt || true
-            adb exec-out screencap -p > smoke-gameplay.png || true
-            adb logcat -d -s PTA:* > smoke-logcat.txt || true
-            echo "--- memory ---"
-            grep -E "TOTAL|Java Heap|Native Heap|Graphics" smoke-meminfo.txt || true
-            echo "--- runtime ---"
-            grep -E "loading (start|done)|runtime:|memory pressure|final memory" smoke-logcat.txt | tail -25 || true
-            if adb logcat -d -b crash | grep -q "it.pta.game"; then
-              adb logcat -d -b crash | tail -60
-              echo "::error::PTA crashed during the smoke test"
-              exit 1
+            adb logcat -d -s PTA:* 2>/dev/null | tail -n 4 || true
+            exit 1
+          }
+          echo "kvm: $(ls -l /dev/kvm 2>&1 || true)"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "emulator" "platform-tools" \
+            "system-images;android-30;google_apis;x86_64" > sdk-install.log 2>&1 \
+            || fail "sdkmanager failed: $(tail -n 2 sdk-install.log | tr '\n' ' ' | cut -c1-600)"
+          echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n pta \
+            -k "system-images;android-30;google_apis;x86_64" -d pixel_2 --force > avd.log 2>&1 \
+            || fail "AVD creation failed: $(tail -n 2 avd.log | tr '\n' ' ' | cut -c1-600)"
+          "$SDK/emulator/emulator" -avd pta -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -no-metrics > emulator.log 2>&1 &
+          adb wait-for-device || fail "adb wait-for-device failed"
+          booted=0
+          for i in $(seq 1 90); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+              booted=1
+              break
             fi
-            if grep -q "startup/render failure" smoke-logcat.txt; then
-              echo "::error::PTA hit its fatal handler"
-              grep -A5 "startup/render failure" smoke-logcat.txt | tail -20
-              exit 1
-            fi
-            grep -q "loading done" smoke-logcat.txt || { echo "::error::the loading screen never completed"; exit 1; }
-            grep -q "runtime:" smoke-logcat.txt || { echo "::error::no gameplay runtime samples"; exit 1; }
+            sleep 5
+          done
+          [ "$booted" = "1" ] || fail "the emulator did not boot within 7.5 minutes"
+          adb shell input keyevent 82 >/dev/null 2>&1 || true
+          adb install -r "$APK" > install.log 2>&1 \
+            || fail "adb install failed: $(tail -n 3 install.log | tr '\n' ' ' | cut -c1-600)"
+          adb logcat -c
+          adb shell am start -W -n it.pta.game/.AndroidLauncher --ez pta.smoke true > start.log 2>&1 \
+            || fail "the launcher could not be started: $(tail -n 2 start.log | tr '\n' ' ')"
+          ok=0
+          i=1
+          while [ $i -le 60 ]; do
+            if adb logcat -d -s PTA:* | grep -q "startup complete"; then ok=1; break; fi
+            sleep 5
+            i=$((i + 1))
+          done
+          adb logcat -d -s PTA:* > smoke-startup.txt || true
+          [ "$ok" = "1" ] || fail "startup complete never appeared: $(tail -n 3 smoke-startup.txt | tr '\n' ' ' | cut -c1-900)"
+          sleep 30
+          adb exec-out screencap -p > smoke-loading.png || true
+          sleep 150
+          adb shell dumpsys meminfo it.pta.game > smoke-meminfo.txt || true
+          adb exec-out screencap -p > smoke-gameplay.png || true
+          adb logcat -d -s PTA:* > smoke-logcat.txt || true
+          echo "--- memory ---"
+          grep -E "TOTAL|Java Heap|Native Heap|Graphics" smoke-meminfo.txt || true
+          echo "--- runtime ---"
+          grep -E "loading (start|done)|runtime:|memory pressure|final memory" smoke-logcat.txt | tail -25 || true
+          adb logcat -d -b crash > smoke-crash.txt || true
+          grep -q "it.pta.game" smoke-crash.txt && fail "PTA is in the crash buffer"
+          grep -q "startup/render failure" smoke-logcat.txt \
+            && fail "PTA hit its fatal handler: $(grep -A3 'startup/render failure' smoke-logcat.txt | tail -n 2 | tr '\n' ' ' | cut -c1-600)"
+          grep -q "loading done" smoke-logcat.txt || fail "the loading screen never completed"
+          grep -q "runtime:" smoke-logcat.txt || fail "no gameplay runtime samples were logged"
+          grep -q "smoke: walked" smoke-logcat.txt || fail "the automated walk did not complete"
 
       - name: Upload device smoke evidence
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -155,6 +169,8 @@ jobs:
           path: |
             smoke-startup.txt
             smoke-logcat.txt
+            smoke-crash.txt
+            emulator.log
             smoke-meminfo.txt
             smoke-loading.png
             smoke-gameplay.png
