@@ -109,6 +109,8 @@ jobs:
       - name: Emulator smoke test
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
@@ -118,6 +120,7 @@ jobs:
             {
               echo "exit=$code at $(date -u)"
               echo "--- kvm"; ls -l /dev/kvm 2>&1
+              echo "--- accel-check"; "$SDK/emulator/emulator" -accel-check 2>&1 | head -6
               echo "--- sdkmanager"; tail -n 25 sdk-install.log 2>/dev/null
               echo "--- avd"; tail -n 15 avd.log 2>/dev/null
               echo "--- emulator"; tail -n 80 emulator.log 2>/dev/null
@@ -132,6 +135,8 @@ jobs:
             git add -f ci-diagnostics.txt
             git commit -q -m "CI diagnostics for ${GITHUB_SHA}" >/dev/null 2>&1 || true
             git push -q -f origin ci-logs >/dev/null 2>&1 || true
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -f body="$(head -c 18000 ci-diagnostics.txt)" >/dev/null 2>&1 || true
             exit "$code"
           }
           trap publish EXIT
