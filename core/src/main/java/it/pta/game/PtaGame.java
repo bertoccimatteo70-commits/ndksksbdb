@@ -413,7 +413,11 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
             perfFrames = 0;
             return;
         }
-        perfTime += delta;
+        // The simulation delta is capped at 50 ms so physics stays stable on a slow
+        // frame. Using that capped value here made a 10 fps device look like 20 fps
+        // (1 frame / 0.05 s), so the quality governor never engaged. Measure the
+        // real wall-clock frame time instead.
+        perfTime += com.badlogic.gdx.Gdx.graphics.getDeltaTime();
         perfFrames++;
         if (perfTime < 6f) {
             return;
