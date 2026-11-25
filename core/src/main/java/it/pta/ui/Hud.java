@@ -5,19 +5,32 @@ import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.scenes.scene2d.Actor;
+import it.pta.game.Content;
 import it.pta.game.MissionSystem;
 import it.pta.game.World;
 import it.pta.world.MapData;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /** In-game HUD: minimap, money, wanted stars, health, fuel, objectives and dialogue. */
 public final class Hud extends Actor {
+    private static final Color ROAD_DRIVABLE = new Color(0.90f, 0.94f, 0.99f, 0.96f);
+    private static final Color ROAD_MINOR = new Color(0.56f, 0.62f, 0.71f, 0.82f);
+    private static final Color MAP_BG = new Color(0.015f, 0.030f, 0.050f, 0.93f);
+    private static final Color MAP_RING = new Color(0.55f, 0.70f, 0.86f, 0.80f);
+    private static final Color POI_HOME = new Color(0.40f, 0.92f, 0.55f, 1f);
+    private static final Color POI_SHOP = new Color(0.98f, 0.80f, 0.30f, 1f);
+    private static final Color POI_SERVICE = new Color(0.40f, 0.80f, 0.98f, 1f);
+    private static final Color POI_POLICE = new Color(0.96f, 0.45f, 0.42f, 1f);
+
     private final World world;
     private final UiAssets a;
     private final GlyphLayout layout = new GlyphLayout();
-    private final List<float[]> segments = new ArrayList<>();
+    /** Flat x0,z0,x1,z1,drivable records; reused so the minimap allocates nothing. */
+    private float[] roads = new float[5 * 720];
+    private int roadCount;
+    private final float[] poi = new float[3 * 40];
+    private int poiCount;
+    private String streetName = "";
+    private final float[] clipped = new float[4];
     private float mapTimer;
     private float pulse;
 
@@ -197,74 +210,133 @@ public final class Hud extends Actor {
         batch.setColor(Color.WHITE);
     }
 
+    /**
+     * Minimap: the real OSM streets around the player, with the drivable network in
+     * white and the rest in grey, landmark dots, a north marker and the name of the
+     * street the player is standing on. Everything is clipped to the dial, so no
+     * segment spills outside the circle, and the records are reused every refresh.
+     */
     private void drawMinimap(Batch batch, float w, float h, float dp) {
-        float radius = a.dp(88);
-        float cx = w - radius - a.dp(30);
-        float cy = h - radius - a.dp(30);
-        batch.setColor(0.02f, 0.04f, 0.06f, 0.88f);
-        batch.draw(a.circle, cx - radius, cy - radius, radius * 2, radius * 2);
-        float scale = 300f / radius; // metres per pixel
+        float radius = a.dp(96);
+        float cx = w - radius - a.dp(28);
+        float cy = h - radius - a.dp(28);
+        // 280 m across the dial: enough to read the next junction while walking.
+        float scale = 280f / radius;
 
         mapTimer -= com.badlogic.gdx.Gdx.graphics.getDeltaTime();
         if (mapTimer <= 0) {
-            mapTimer = 0.30f;
-            segments.clear();
+            mapTimer = 0.45f;
             float px = world.player().x;
             float pz = world.player().z;
-            world.map.forEachRoadSegment(px - 300, pz - 300, px + 300, pz + 300,
+            roadCount = 0;
+            world.map.forEachRoadSegment(px - 290, pz - 290, px + 290, pz + 290,
                     (x0, z0, x1, z1, drivable) -> {
-                        if (Math.abs(x0 - px) > 300 || Math.abs(z0 - pz) > 300) {
-                            return true;
+                        if (roadCount >= 720) {
+                            return false;
                         }
-                        segments.add(new float[]{x0, z0, x1, z1, drivable ? 1 : 0});
-                        return segments.size() < 520;
-                    }, 520);
+                        int p = roadCount * 5;
+                        roads[p] = x0;
+                        roads[p + 1] = z0;
+                        roads[p + 2] = x1;
+                        roads[p + 3] = z1;
+                        roads[p + 4] = drivable ? 1f : 0f;
+                        roadCount++;
+                        return true;
+                    }, 720);
+            MapData.RoadHit hit = world.map.nearestRoad(px, pz, true, 50f);
+            String name = hit == null ? null : world.map.name(hit.way.nameIdx);
+            streetName = name == null ? "" : name.trim();
+            poiCount = 0;
+            for (Content.Place place : Content.all()) {
+                if (poiCount >= 40) {
+                    break;
+                }
+                if (Math.hypot(place.x - px, place.z - pz) > 380f) {
+                    continue;
+                }
+                poi[poiCount * 3] = place.x;
+                poi[poiCount * 3 + 1] = place.z;
+                poi[poiCount * 3 + 2] = place.kind.ordinal();
+                poiCount++;
+            }
         }
 
-        for (float[] s : segments) {
-            float x0 = cx + (s[0] - world.player().x) / scale;
-            float y0 = cy - (s[1] - world.player().z) / scale;
-            float x1 = cx + (s[2] - world.player().x) / scale;
-            float y1 = cy - (s[3] - world.player().z) / scale;
-            float dx = x1 - x0, dy = y1 - y0;
+        // Shadow, outer ring and dark dial.
+        batch.setColor(0f, 0f, 0f, 0.35f);
+        batch.draw(a.circle, cx - radius - a.dp(4), cy - radius - a.dp(6),
+                (radius + a.dp(4)) * 2f, (radius + a.dp(4)) * 2f);
+        batch.setColor(MAP_RING);
+        batch.draw(a.circle, cx - radius - a.dp(2), cy - radius - a.dp(2),
+                (radius + a.dp(2)) * 2f, (radius + a.dp(2)) * 2f);
+        batch.setColor(MAP_BG);
+        batch.draw(a.circle, cx - radius, cy - radius, radius * 2f, radius * 2f);
+
+        // Streets, clipped to the dial so nothing spills over the HUD.
+        float px = world.player().x;
+        float pz = world.player().z;
+        for (int i = 0; i < roadCount; i++) {
+            int p = i * 5;
+            clipped[0] = cx + (roads[p] - px) / scale;
+            clipped[1] = cy - (roads[p + 1] - pz) / scale;
+            clipped[2] = cx + (roads[p + 2] - px) / scale;
+            clipped[3] = cy - (roads[p + 3] - pz) / scale;
+            if (!clipToCircle(clipped, cx, cy, radius - dp)) {
+                continue;
+            }
+            float dx = clipped[2] - clipped[0];
+            float dy = clipped[3] - clipped[1];
             float len = (float) Math.sqrt(dx * dx + dy * dy);
-            if (len < 0.4f) {
+            if (len < 0.5f) {
                 continue;
             }
-            if (Math.hypot(x0 - cx, y0 - cy) > radius) {
-                continue;
-            }
-            batch.setColor(s[4] > 0 ? new Color(0.78f, 0.82f, 0.88f, 0.85f)
-                    : new Color(0.48f, 0.52f, 0.58f, 0.55f));
+            boolean drivable = roads[p + 4] > 0.5f;
+            batch.setColor(drivable ? ROAD_DRIVABLE : ROAD_MINOR);
+            float thick = (drivable ? 2.8f : 1.3f) * dp;
             float angle = (float) Math.toDegrees(Math.atan2(dy, dx));
-            float thick = s[4] > 0 ? 2.2f * dp : 1.1f * dp;
-            batch.draw(a.whiteRegion, x0, y0 - thick * 0.5f, 0, thick * 0.5f, len, thick, 1f, 1f, angle);
+            batch.draw(a.whiteRegion, clipped[0], clipped[1] - thick * 0.5f, 0,
+                    thick * 0.5f, len, thick, 1f, 1f, angle);
         }
 
-        // GPS route: same points as the 3D ribbon on the asphalt.
+        // Local landmarks: a few coloured dots make the map readable even without a
+        // mission marker (home green, shops gold, services blue, police red).
+        for (int i = 0; i < poiCount; i++) {
+            float x = cx + (poi[i * 3] - px) / scale;
+            float y = cy - (poi[i * 3 + 1] - pz) / scale;
+            if (Math.hypot(x - cx, y - cy) > radius - a.dp(8)) {
+                continue;
+            }
+            batch.setColor(poiColor((int) poi[i * 3 + 2]));
+            batch.draw(a.circle, x - a.dp(3.5f), y - a.dp(3.5f), a.dp(7f), a.dp(7f));
+        }
+
+        // GPS route: the same points as the 3D ribbon on the asphalt.
         if (world.gpsAvailable && world.gpsRoute != null) {
             batch.setColor(0.10f, 0.92f, 0.96f, 0.95f);
             float[] route = world.gpsRoute;
             for (int i = 0; i + 3 < route.length; i += 2) {
-                float x0 = cx + (route[i] - world.player().x) / scale;
-                float y0 = cy - (route[i + 1] - world.player().z) / scale;
-                float x1 = cx + (route[i + 2] - world.player().x) / scale;
-                float y1 = cy - (route[i + 3] - world.player().z) / scale;
-                float dx = x1 - x0, dy = y1 - y0;
+                clipped[0] = cx + (route[i] - px) / scale;
+                clipped[1] = cy - (route[i + 1] - pz) / scale;
+                clipped[2] = cx + (route[i + 2] - px) / scale;
+                clipped[3] = cy - (route[i + 3] - pz) / scale;
+                if (!clipToCircle(clipped, cx, cy, radius - dp)) {
+                    continue;
+                }
+                float dx = clipped[2] - clipped[0];
+                float dy = clipped[3] - clipped[1];
                 float len = (float) Math.sqrt(dx * dx + dy * dy);
-                if (len < 1f || Math.hypot(x0 - cx, y0 - cy) > radius) {
+                if (len < 1f) {
                     continue;
                 }
                 float angle = (float) Math.toDegrees(Math.atan2(dy, dx));
-                batch.draw(a.whiteRegion, x0, y0 - 1.6f * dp, 0, 1.6f * dp,
-                        len, 3.2f * dp, 1f, 1f, angle);
+                batch.draw(a.whiteRegion, clipped[0], clipped[1] - 1.8f * dp, 0, 1.8f * dp,
+                        len, 3.6f * dp, 1f, 1f, angle);
             }
         }
 
-        // mission marker
+        // Mission marker.
         if (world.missions.markerActive) {
-            float mx = (world.missions.markerX - world.player().x) / scale;
-            float mz = -(world.missions.markerZ - world.player().z) / scale;
+            float mx = (world.missions.markerX - px) / scale;
+            float mz = -(world.missions.markerZ - pz) / scale;
             float len = (float) Math.sqrt(mx * mx + mz * mz);
             float lim = radius - a.dp(10);
             if (len > lim) {
@@ -272,15 +344,11 @@ public final class Hud extends Actor {
                 mz = mz / len * lim;
             }
             batch.setColor(0.98f, 0.80f, 0.25f, 1f);
-            batch.draw(a.circle, cx + mx - a.dp(6), cy + mz - a.dp(6), a.dp(12), a.dp(12));
+            batch.draw(a.circle, cx + mx - a.dp(7), cy + mz - a.dp(7), a.dp(14), a.dp(14));
         }
 
-        // player arrow
-        float hx = MathUtils.sin(world.player().heading);
-        float hz = -MathUtils.cos(world.player().heading);
+        // Player arrow.
         batch.setColor(1f, 1f, 1f, 1f);
-        float px = cx + hx * a.dp(10);
-        float py = cy - hz * a.dp(10);
         batch.draw(a.circle, cx - a.dp(7), cy - a.dp(7), a.dp(14), a.dp(14));
         batch.setColor(0.20f, 0.35f, 0.55f, 1f);
         batch.draw(a.circle, cx - a.dp(4), cy - a.dp(4), a.dp(8), a.dp(8));
@@ -288,14 +356,75 @@ public final class Hud extends Actor {
         batch.draw(a.whiteRegion, cx, cy, 0, 1.5f * dp, a.dp(16), 3f * dp, 1f, 1f,
                 (float) Math.toDegrees(world.player().heading) - 90f);
 
-        // ring
-        batch.setColor(0.55f, 0.68f, 0.82f, 0.5f);
-        for (int i = 0; i < 40; i++) {
-            float ang = (float) (i * Math.PI * 2 / 40);
-            batch.draw(a.white, cx + MathUtils.cos(ang) * radius - 2, cy + MathUtils.sin(ang) * radius - 2, 4, 4);
-        }
+        // North marker and the current street name below the dial.
         a.small.setColor(0.90f, 0.94f, 1f, 1f);
-        a.small.draw(batch, "N", cx - a.dp(5), cy + radius + a.dp(4));
+        a.small.draw(batch, "N", cx - a.dp(5), cy + radius + a.dp(2));
+        if (!streetName.isEmpty()) {
+            layout.setText(a.small, streetName);
+            float nameW = Math.min(layout.width, radius * 1.7f);
+            a.small.setColor(0.86f, 0.92f, 0.98f, 0.95f);
+            a.small.draw(batch, streetName, cx - nameW * 0.5f, cy - radius - a.dp(10), nameW,
+                    com.badlogic.gdx.utils.Align.center, false);
+        }
         batch.setColor(Color.WHITE);
+    }
+
+    private static Color poiColor(int kind) {
+        switch (kind) {
+            case 1: // HOME
+                return POI_HOME;
+            case 2: // SHOP
+            case 3: // DEALER
+            case 4: // TUNING
+            case 9: // MISSION
+            case 10: // LANDMARK
+                return POI_SHOP;
+            case 6: // POLICE
+                return POI_POLICE;
+            default:
+                return POI_SERVICE;
+        }
+    }
+
+    /** Clips a screen-space segment to the dial. Returns false when it misses it. */
+    private static boolean clipToCircle(float[] p, float cx, float cy, float radius) {
+        float ax = p[0] - cx, ay = p[1] - cy;
+        float bx = p[2] - cx, by = p[3] - cy;
+        float r2 = radius * radius;
+        float a2 = ax * ax + ay * ay;
+        float b2 = bx * bx + by * by;
+        boolean inA = a2 <= r2;
+        boolean inB = b2 <= r2;
+        if (!inA && !inB) {
+            return false;
+        }
+        float dx = bx - ax, dy = by - ay;
+        float len2 = dx * dx + dy * dy;
+        if (len2 < 1e-4f) {
+            if (!inA) {
+                return false;
+            }
+        } else {
+            float bq = 2f * (ax * dx + ay * dy);
+            float cq = a2 - r2;
+            float disc = bq * bq - 4f * len2 * cq;
+            if (disc >= 0f) {
+                float sq = (float) Math.sqrt(disc);
+                float t1 = (-bq - sq) / (2f * len2);
+                float t2 = (-bq + sq) / (2f * len2);
+                if (!inA && t1 > 0f && t1 < 1f) {
+                    ax += dx * t1;
+                    ay += dy * t1;
+                } else if (inA && !inB && t2 > 0f && t2 < 1f) {
+                    bx = ax + dx * t2;
+                    by = ay + dy * t2;
+                }
+            }
+        }
+        p[0] = ax + cx;
+        p[1] = ay + cy;
+        p[2] = bx + cx;
+        p[3] = by + cy;
+        return true;
     }
 }

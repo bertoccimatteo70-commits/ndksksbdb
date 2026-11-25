@@ -50,7 +50,9 @@ public final class ChunkBuilder {
         g.centerX = (x0 + x1) * 0.5f;
         g.centerZ = (z0 + z1) * 0.5f;
         g.centerY = map.heightAt(g.centerX, g.centerZ) + 18f;
-        g.radius = 480f;
+        // Half the chunk diagonal is 362 m: the old 480 m sphere made far chunks
+        // pass the frustum test and cost fill rate long after the fog had hidden them.
+        g.radius = 380f;
         return g;
     }
 

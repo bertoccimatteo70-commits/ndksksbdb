@@ -10,13 +10,18 @@ public final class Shaders {
             + "attribute vec2 a_texCoord0;\n"
             + "uniform mat4 u_projView;\n"
             + "uniform mat4 u_model;\n"
+            + "uniform vec3 u_camPos;\n"
             + "varying vec4 v_color;\n"
             + "varying vec3 v_normal;\n"
             + "varying vec2 v_uv;\n"
             + "varying vec3 v_world;\n"
+            + "varying float v_dist;\n"
             + "void main() {\n"
             + "  vec4 wp = u_model * vec4(a_position, 1.0);\n"
             + "  v_world = wp.xyz;\n"
+            // Fog distance is interpolated from the vertices: the fragment shader
+            // no longer computes a length() for every covered pixel.
+            + "  v_dist = length(u_camPos - wp.xyz);\n"
             + "  v_normal = normalize((u_model * vec4(a_normal, 0.0)).xyz);\n"
             + "  v_color = a_color;\n"
             + "  v_uv = a_texCoord0;\n"
@@ -39,6 +44,7 @@ public final class Shaders {
             + "varying vec3 v_normal;\n"
             + "varying vec2 v_uv;\n"
             + "varying vec3 v_world;\n"
+            + "varying float v_dist;\n"
             + "void main() {\n"
             + "  float tile = floor(v_color.a + 0.5);\n"
             + "  float col = mod(tile, 4.0);\n"
@@ -101,8 +107,7 @@ public final class Shaders {
             + "  lit = mix(lit, mix(dayGlass, nightGlass, u_night), windowGlow);\n"
             + "  lit += base * tex.a * u_night * vec3(1.15, 0.92, 0.62);\n"
             + "  lit += vec3(1.0, 0.67, 0.34) * windowGlow * pow(u_night, 1.45) * 0.38;\n"
-            + "  float d = length(u_camPos - v_world);\n"
-            + "  float fog = clamp((d - u_fogStart) / max(1.0, u_fogEnd - u_fogStart), 0.0, 1.0);\n"
+            + "  float fog = clamp((v_dist - u_fogStart) / max(1.0, u_fogEnd - u_fogStart), 0.0, 1.0);\n"
             + "  gl_FragColor = vec4(mix(lit, u_fogColor, fog), 1.0);\n"
             + "}\n";
 
@@ -128,7 +133,15 @@ public final class Shaders {
             + "uniform float u_time;\n"
             + "uniform float u_cloud;\n"
             + "varying vec3 v_dir;\n"
-            + "float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n"
+            // Cheap hash without sin(): the sky used to evaluate 4 octaves of
+            // value noise (16 sin-based hashes) for every sky pixel. Two octaves
+            // and this hash keep the same soft cloud shapes at a fraction of the
+            // fragment cost, which is what the low frame rate was made of.
+            + "float hash(vec2 p) {\n"
+            + "  p = fract(p * vec2(123.34, 456.21));\n"
+            + "  p += dot(p, p + 45.32);\n"
+            + "  return fract(p.x * p.y);\n"
+            + "}\n"
             + "float noise(vec2 p) {\n"
             + "  vec2 i = floor(p); vec2 f = fract(p);\n"
             + "  f = f * f * (3.0 - 2.0 * f);\n"
@@ -138,7 +151,7 @@ public final class Shaders {
             + "}\n"
             + "float fbm(vec2 p) {\n"
             + "  float v = 0.0; float a = 0.5;\n"
-            + "  for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }\n"
+            + "  for (int i = 0; i < 2; i++) { v += a * noise(p); p *= 2.07; a *= 0.5; }\n"
             + "  return v;\n"
             + "}\n"
             + "void main() {\n"

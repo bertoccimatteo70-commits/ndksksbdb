@@ -44,8 +44,9 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     private float perfTime;
     private int perfFrames;
     private int debugFrames;
-    private boolean perfWarned;
     private boolean campaignFinished;
+    private final PerformanceGovernor governor = new PerformanceGovernor();
+    private boolean adaptiveNotified;
     private Throwable fatal;
     private SpriteBatch fatalBatch;
     private BitmapFont fatalFont;
@@ -362,7 +363,11 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
             memoryLogTimer = 0f;
             Gdx.app.log("PTA", "runtime: " + memory.summary() + " "
                     + renderer.chunkManager().stats() + " fps=" + Gdx.graphics.getFramesPerSecond()
-                    + " preset=" + settings.preset.label);
+                    + " preset=" + settings.preset.label
+                    + " scene=" + renderer.sceneHeight() + "p"
+                    + " adaptive=" + governor.step()
+                    + " tri=" + renderer.lastTriangles
+                    + " drawn=" + renderer.lastDrawnChunks);
         }
         // The menu and the opening cinematic stream the province too, so the trim has
         // to run there as well: the old build only reacted during gameplay, which is
@@ -401,6 +406,13 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         if (mode != Mode.PLAY) {
             return;
         }
+        if (loading) {
+            // Chunk uploads make the loading screen slower than gameplay: measuring
+            // there would lower the quality for a frame cost the player never sees.
+            perfTime = 0f;
+            perfFrames = 0;
+            return;
+        }
         perfTime += delta;
         perfFrames++;
         if (perfTime < 6f) {
@@ -408,14 +420,24 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         }
         float fps = perfFrames / perfTime;
         int target = settings.fpsCap <= 0 ? 60 : settings.fpsCap;
-        if (fps < target * 0.62f && settings.preset != Settings.Preset.BASE && !perfWarned
-                && ui.isGameplay()) {
-            perfWarned = true;
-            Settings.Preset lower = Settings.Preset.values()[Math.max(0, settings.preset.ordinal() - 1)];
-            ui.showPerformance(lower, "Il dispositivo non sta sostenendo il preset "
-                    + settings.preset.label + " (" + (int) fps + " FPS su " + target
-                    + " attesi). Consigliato il preset " + lower.label
-                    + ": risoluzione " + lower.renderHeight + "p e distanza ridotta.");
+        // Adaptive quality: a device that cannot hold the preset gets a smaller
+        // internal resolution, less view distance and less traffic instead of a
+        // warning panel that leaves the game at 5 fps. Recovery is deliberately
+        // slow (30 s) so the quality cannot oscillate.
+        int change = governor.update(perfTime, fps, target);
+        if (change != 0) {
+            applySettings();
+            Gdx.app.log("PTA", "adaptive quality: step=" + governor.step()
+                    + " change=" + change
+                    + " measured=" + (int) fps + "fps target=" + target
+                    + " scene=" + renderer.sceneHeight() + "p"
+                    + " view=" + (int) (settings.viewDistance * governor.viewScale()) + "m"
+                    + " traffic=" + world.traffic.maxCars + " cars");
+            if (!adaptiveNotified) {
+                adaptiveNotified = true;
+                world.notify("Prestazioni: risoluzione adattata a "
+                        + renderer.sceneHeight() + "p per mantenere il gioco fluido.");
+            }
         }
         perfTime = 0;
         perfFrames = 0;
@@ -514,9 +536,13 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     }
 
     public void applySettings() {
-        renderer.configure(settings.renderHeight, settings.viewDistance, settings.fxaa);
-        world.traffic.maxCars = Math.max(4, Math.round(16f * settings.trafficDensity));
-        world.traffic.maxPeds = Math.max(6, Math.round(28f * settings.trafficDensity));
+        // The governor scales the real render height (not just a label), so every
+        // step lowers the number of shaded pixels instead of the apparent quality.
+        int height = Math.max(360, Math.round(settings.renderHeight * governor.resolutionScale()));
+        renderer.configure(height, settings.viewDistance * governor.viewScale(), settings.fxaa);
+        float traffic = settings.trafficDensity * governor.trafficScale();
+        world.traffic.maxCars = Math.max(4, Math.round(16f * traffic));
+        world.traffic.maxPeds = Math.max(6, Math.round(28f * traffic));
         world.layout.scale = MathUtils.clamp(world.layout.scale, 0.7f, 1.6f);
         audio.setVolumes(settings.musicVolume, settings.sfxVolume,
                 settings.ambientVolume, settings.dialogueVolume);
@@ -575,10 +601,10 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         loading = false;
         ui.showGameplay();
         if (loadingNewGame) {
-            MissionSystem.Mission first = world.missions.nextMainMission();
-            if (first != null) {
-                world.startMission(first);
-            }
+            // The game opens in free roam: no mission is started automatically, no
+            // GPS route is drawn and the minimap only shows the real streets. The
+            // campaign is still one tap away in the pause menu (MISSIONI).
+            world.notify("Pistoia è aperta: esplora liberamente. Le missioni sono nel menu II.");
         }
         loadingNewGame = false;
         updateCamera(0.016f);

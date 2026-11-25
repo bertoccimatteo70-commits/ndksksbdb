@@ -443,7 +443,7 @@ public final class TrafficSystem {
     public void drawCars(ShaderProgram shader, WorldRenderer renderer, Vector3 camPos, float night) {
         for (Vehicle v : cars) {
             float d2 = camPos.dst2(v.x, v.y, v.z);
-            if (d2 > 520f * 520f) {
+            if (d2 > 380f * 380f) {
                 continue;
             }
             v.draw(shader, renderer, d2 < 130f * 130f);
@@ -454,7 +454,9 @@ public final class TrafficSystem {
     public void drawPeds(ShaderProgram shader, WorldRenderer renderer, Vector3 camPos,
                          Humanoid[] models) {
         for (Ped p : peds) {
-            if (camPos.dst2(p.x, p.y, p.z) > 260f * 260f) {
+            // A pedestrian is a handful of pixels past 150 m, but six draw calls:
+            // stopping there removes dozens of submissions from every frame.
+            if (camPos.dst2(p.x, p.y, p.z) > 150f * 150f) {
                 continue;
             }
             Humanoid h = models[(int) (Math.abs(p.bobSeed * 1000) % models.length)];

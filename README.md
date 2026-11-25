@@ -9,7 +9,7 @@ Motore: **libGDX 1.12.1 + renderer OpenGL ES 2.0 proprietario** (Java 17).
 Nessun asset di terze parti, nessun marchio, nessuna musica protetta: texture, modelli,
 personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 
-> **Release corrente:** [ultima release](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/latest) — scarica `PTA-x.y.z.apk` dagli asset (8,5 MB). Il numero di versione è in [`version.properties`](version.properties) e viene incrementato dalla pipeline.
+> **Release corrente:** [ultima release](https://github.com/bertoccimatteo70-commits/ndksksbdb/releases/latest) — scarica `PTA-x.y.z.apk` dagli asset (circa 14 MB). Il numero di versione è in [`version.properties`](version.properties) e viene incrementato dalla pipeline.
 >
 > La release corrente rende leggibili le strade in tutti i LOD, solidi gli edifici con
 > collisione sul bordo reale dei poligoni OSM, sicuri gli ingressi/uscite degli interni
@@ -33,16 +33,16 @@ personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 | Case con interni 3D visitabili, letto per salvare, garage | implementato |
 | Controlli touch contestuali, ridimensionabili, spostabili, trasparenza, reset | implementato |
 | Prima/terza persona a piedi e in auto | implementato |
-| Preset BASE/MEDIA/ALTA/ULTRA + impostazioni avanzate + avviso prestazioni | implementato |
+| Preset BASE/MEDIA/ALTA/ULTRA + impostazioni avanzate + qualita adattiva | implementato |
 | Menu, mappa, missioni, salvataggi, crediti, intro cinematografica saltabile | implementato |
 | Audio procedurale con volumi separati | implementato |
 | APK installabile e pipeline GitHub Actions | build automatica nel workflow |
 
-Le verifiche automatiche sono **20 test JVM verdi**: caricamento della mappa
+Le verifiche automatiche sono **44 test JVM verdi**: caricamento della mappa
 reale, conteggi OSM invariati, collisione sul bordo di un muro lungo, push-out da un
 footprint, camminata e corsa contro una facciata, auto a 34 m/s contro un edificio,
 percorso GPS che non attraversa footprint, strade presenti e contrastate in LOD 0/1/2,
-interni, missioni, economia, preset e salvataggi. La build è stata installata e avviata
+interni, missioni, economia, preset, salvataggi e i passi della qualita adattiva. La build è stata installata e avviata
 su emulatore Android x86_64: la città e le facciate sono state visualizzate in gioco
 dopo il caricamento dei chunk, con HUD e spawn nella Piazza del Duomo. Il collaudo su
 telefono fisico, la guida prolungata, la resa fotografica dell'asfalto in ogni zona e le
@@ -62,7 +62,7 @@ performance reali restano da fare: vedi [Limiti noti](#limiti-noti).
 | RAM consigliata | 3 GB, con preset MEDIA |
 | GPU | OpenGL ES 2.0 |
 | Connessione | non richiesta dopo l'installazione |
-| Spazio | APK 8,5 MB; circa 7,7 MB di mappa copiati nello storage interno al primo avvio |
+| Spazio | APK circa 14 MB; 8,1 MB di mappa copiati nello storage interno al primo avvio |
 
 ### Firma dell'APK
 
@@ -171,6 +171,13 @@ La mappa completa non viene caricata come 71.844 oggetti Java.
   **BASE (480p, 620 m)** offre più margine. Non è stata eseguita una misura dell'heap
   su hardware reale: i limiti sono di progetto e sono coperti dai test JVM sulla cache,
   non da un benchmark su telefono.
+- **La dimensione dell'APK non è la RAM.** Il pacchetto è piccolo perché non contiene
+  texture da centinaia di MB: palazzi, strade, veicoli e personaggi sono generati dal
+  codice, la mappa da 8,1 MB vive già nello storage interno (mappata in sola lettura) e
+  l'audio è in streaming. Portare l'APK a 300 MB con dati non usati non ridurrebbe la
+  RAM occupata né aumenterebbe gli FPS; per questo non è stato fatto. Se in futuro
+  arriveranno texture o audio pesanti, il posto giusto è la ROM (storage interno), non
+  l'heap Java.
 
 ---
 
@@ -206,7 +213,7 @@ Dati reali, non inventati:
 - **Mapzen / AWS Terrain Tiles** (public domain) per l'altimetria: le colline di
   Serravalle e Montale sono reali, non decorative.
 
-Numeri della mappa cotta in `app/src/main/assets/map/pta_map.bin` (7,7 MB):
+Numeri della mappa cotta in `app/src/main/assets/map/pta_map.bin` (8,1 MB):
 
 - 71.844 edifici
 - 26.296 tracciati stradali (17.679 guidabili)
@@ -236,8 +243,10 @@ Protagonisti:
 - **Marco Bellandi** — meccanico, ex detenuto, officina di famiglia in centro.
 - **Elisa Vannucci** — giornalista locale, casa a Casalguidi, indaga sulla Valdibure.
 
-La missione finale sblocca l'esplorazione libera. Le case e le attività acquistate
-restano dopo il finale.
+Il gioco si apre in **mondo aperto**: nessuna missione parte da sola, nessuna rotta
+GPS viene imposta e la minimappa mostra soltanto le strade reali attorno al
+giocatore. La campagna si avvia quando vuoi da **II → MISSIONI**; le case e le
+attività acquistate restano dopo il finale.
 
 ---
 
@@ -256,8 +265,12 @@ Impostazioni avanzate: risoluzione, limite FPS, ombre, texture, distanza, traffi
 effetti, FXAA, FPS overlay, volumi separati (musica/effetti/ambiente/dialoghi),
 dimensione e trasparenza dei controlli, layout mancino.
 
-Se il frame rate medio scende sotto il 62% dell'obiettivo, il gioco mostra un avviso
-con il preset inferiore consigliato e permette di applicarlo con un tocco.
+Se il frame rate medio resta sotto il 62% dell'obiettivo per 5 secondi, il gioco
+riduce da solo la risoluzione interna (passi 0.85/0.72/0.62, minimo 360p), la
+distanza di streaming (fino al 72%) e il traffico (fino al 55%), e lo registra in
+logcat come `adaptive quality` insieme agli FPS misurati. Quando il dispositivo
+ha di nuovo margine, la qualità risale un passo alla volta dopo 30 secondi sopra
+il 92% dell'obiettivo. Non è un avviso da toccare: la risoluzione cambia davvero.
 
 ---
 

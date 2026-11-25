@@ -31,8 +31,10 @@ public final class ControlLayout {
         positions.put("attack", new Vector2(0.90f, 0.19f));
         positions.put("interact", new Vector2(0.67f, 0.23f));
         positions.put("enter", new Vector2(0.55f, 0.12f));
-        positions.put("view", new Vector2(0.93f, 0.86f));
-        positions.put("swap", new Vector2(0.79f, 0.90f));
+        // Kept off the top-right corner: it belongs to the minimap now. The two
+        // secondary buttons sit under pause, on the left edge.
+        positions.put("view", new Vector2(0.075f, 0.78f));
+        positions.put("swap", new Vector2(0.075f, 0.64f));
         positions.put("pause", new Vector2(0.06f, 0.93f));
         positions.put("throttle", new Vector2(0.90f, 0.16f));
         positions.put("brake", new Vector2(0.75f, 0.16f));
@@ -43,6 +45,10 @@ public final class ControlLayout {
         scale = 1f;
         alpha = 0.82f;
         leftHanded = false;
+    }
+
+    private static boolean near(Vector2 v, float x, float y) {
+        return Math.abs(v.x - x) < 0.01f && Math.abs(v.y - y) < 0.01f;
     }
 
     public Vector2 pos(String id) {
@@ -65,6 +71,20 @@ public final class ControlLayout {
     public void load() {
         try {
             Preferences p = Gdx.app.getPreferences("pta_controls");
+            // Layout v2 moved CAMBIA/VISTA out from under the minimap. Only the
+            // untouched old defaults are migrated, so a custom layout is preserved.
+            if (p.getInteger("layoutVersion", 1) < 2) {
+                Vector2 view = positions.get("view");
+                Vector2 swap = positions.get("swap");
+                if (view != null && near(view, 0.93f, 0.86f)) {
+                    view.set(0.075f, 0.78f);
+                }
+                if (swap != null && near(swap, 0.79f, 0.90f)) {
+                    swap.set(0.075f, 0.64f);
+                }
+                p.putInteger("layoutVersion", 2);
+                p.flush();
+            }
             for (String id : positions.keySet()) {
                 String raw = p.getString(id, null);
                 if (raw != null) {
@@ -91,6 +111,7 @@ public final class ControlLayout {
             p.putFloat("scale", scale);
             p.putFloat("alpha", alpha);
             p.putBoolean("leftHanded", leftHanded);
+            p.putInteger("layoutVersion", 2);
             p.flush();
         } catch (Exception ignored) {
             // ignore storage failures

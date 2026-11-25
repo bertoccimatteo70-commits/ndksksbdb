@@ -158,8 +158,9 @@ public final class WorldRenderer implements Disposable {
         gl.glClearColor(sun.fogColor.x, sun.fogColor.y, sun.fogColor.z, 1f);
         gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
-        drawSky(camera);
-
+        // The sky is deliberately not drawn here: see drawWorld(). Drawing it after
+        // the city, with the depth test on, means only the pixels that actually show
+        // sky pay for the procedural clouds.
         worldShader.begin();
         worldShader.setUniformMatrix("u_projView", camera.combined);
         worldShader.setUniformf("u_camPos", camera.position);
@@ -180,8 +181,11 @@ public final class WorldRenderer implements Disposable {
 
     public void drawSky(Camera camera) {
         GL20 gl = Gdx.gl;
-        gl.glDisable(GL20.GL_DEPTH_TEST);
+        // Rendered behind the already drawn city: the sky quad sits at the far plane,
+        // so LEQUAL lets it through only where the depth buffer is still empty.
+        gl.glEnable(GL20.GL_DEPTH_TEST);
         gl.glDepthMask(false);
+        gl.glDepthFunc(GL20.GL_LEQUAL);
         invProjView.set(camera.projection).mul(camera.view).inv();
         skyShader.begin();
         skyShader.setUniformMatrix("u_invProjView", invProjView);
@@ -196,8 +200,8 @@ public final class WorldRenderer implements Disposable {
         skyShader.setUniformf("u_cloud", clouds);
         skyQuad.render(skyShader, GL20.GL_TRIANGLES);
         skyShader.end();
+        gl.glDepthFunc(GL20.GL_LESS);
         gl.glDepthMask(true);
-        gl.glEnable(GL20.GL_DEPTH_TEST);
     }
 
     public void drawWorld(Camera camera) {
@@ -214,9 +218,13 @@ public final class WorldRenderer implements Disposable {
         worldShader.setUniformf("u_tint", 1f, 1f, 1f, 1f);
         worldShader.setUniformi("u_tex", 0);
         atlas.bind(0);
-        chunks.draw(worldShader, camera);
-        chunks.drawWater(worldShader, camera);
+        // Chunks fully hidden by the fog are not submitted at all. The sphere check
+        // by the frustum alone kept far LOD2 chunks in the draw list for another
+        // 400 m past the point where they were 100% fog coloured.
+        chunks.draw(worldShader, camera, fogEnd + 60f);
+        chunks.drawWater(worldShader, camera, fogEnd + 60f);
         worldShader.end();
+        drawSky(camera);
         lastTriangles = chunks.triangles;
         lastDrawnChunks = chunks.drawnChunks;
     }
@@ -267,7 +275,10 @@ public final class WorldRenderer implements Disposable {
             fbo.getColorBufferTexture().bind(0);
             postShader.setUniformi("u_tex", 0);
             postShader.setUniformf("u_texel", 1f / sceneW, 1f / sceneH);
-            postShader.setUniformf("u_aa", fxaa ? 1f : 0f);
+            // FXAA cannot recover detail that the internal resolution never had:
+            // running five taps at 1080p to filter a 720p image only cost fill rate.
+            // When the scene is upscaled the post pass samples once instead.
+            postShader.setUniformf("u_aa", fxaa && sceneH >= screenH ? 1f : 0f);
             postShader.setUniformf("u_vignette", 0.42f);
             postShader.setUniformf("u_saturation", 1.05f);
             postShader.setUniformf("u_rain", rain);
@@ -280,6 +291,11 @@ public final class WorldRenderer implements Disposable {
 
     public float time() {
         return time;
+    }
+
+    /** Height actually used for the 3D pass, after the adaptive resolution step. */
+    public int sceneHeight() {
+        return sceneH;
     }
 
     public void addGlow(float x, float y, float z, float size, float r, float g, float b) {

@@ -432,7 +432,7 @@ public final class ChunkManager implements Disposable {
         }
     }
 
-    public void draw(ShaderProgram shader, Camera camera) {
+    public void draw(ShaderProgram shader, Camera camera, float maxDistance) {
         shader.setUniformMatrix("u_model", identity);
         drawnChunks = 0;
         triangles = 0;
@@ -442,6 +442,15 @@ public final class ChunkManager implements Disposable {
             }
             if (!camera.frustum.sphereInFrustum(c.centerX, c.centerY, c.centerZ, c.radius)) {
                 continue;
+            }
+            if (maxDistance > 0f) {
+                float dx = c.centerX - camera.position.x;
+                float dz = c.centerZ - camera.position.z;
+                // Nearest possible point of the chunk: if even that is past the fog,
+                // every triangle in it would be invisible.
+                if (Math.sqrt(dx * dx + dz * dz) - c.radius > maxDistance) {
+                    continue;
+                }
             }
             drawnChunks++;
             for (Mesh m : c.parts) {
@@ -453,7 +462,7 @@ public final class ChunkManager implements Disposable {
         }
     }
 
-    public void drawWater(ShaderProgram shader, Camera camera) {
+    public void drawWater(ShaderProgram shader, Camera camera, float maxDistance) {
         shader.setUniformMatrix("u_model", identity);
         for (Chunk c : chunks.values()) {
             if (c.water == null) {
@@ -461,6 +470,13 @@ public final class ChunkManager implements Disposable {
             }
             if (!camera.frustum.sphereInFrustum(c.centerX, c.centerY, c.centerZ, c.radius)) {
                 continue;
+            }
+            if (maxDistance > 0f) {
+                float dx = c.centerX - camera.position.x;
+                float dz = c.centerZ - camera.position.z;
+                if (Math.sqrt(dx * dx + dz * dz) - c.radius > maxDistance) {
+                    continue;
+                }
             }
             c.water.render(shader, GL20.GL_TRIANGLES);
         }
