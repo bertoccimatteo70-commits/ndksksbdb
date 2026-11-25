@@ -422,10 +422,13 @@ public final class ChunkManager implements Disposable {
     }
 
     private float distanceToChunk(Chunk c, float x, float z) {
-        float minX = c.cx * map.chunkSize;
-        float minZ = c.cz * map.chunkSize;
-        float nearestX = Math.max(minX, Math.min(x, minX + map.chunkSize));
-        float nearestZ = Math.max(minZ, Math.min(z, minZ + map.chunkSize));
+        return distanceToRect(x, z, c.cx * map.chunkSize, c.cz * map.chunkSize, map.chunkSize);
+    }
+
+    /** Distance from a point to a square chunk: zero inside, never the centre distance. */
+    public static float distanceToRect(float x, float z, float minX, float minZ, float size) {
+        float nearestX = Math.max(minX, Math.min(x, minX + size));
+        float nearestZ = Math.max(minZ, Math.min(z, minZ + size));
         return (float) Math.hypot(nearestX - x, nearestZ - z);
     }
 

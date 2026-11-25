@@ -146,6 +146,21 @@ public class StreamingNavigationNpcTest {
     }
 
     @Test
+    public void evictionMeasuresTheChunkRectangleNotItsCentre() {
+        // The last adaptive step keeps chunks within 1398 m. A corner chunk of the
+        // request window has its centre at ~1448 m, but its nearest point is ~724 m:
+        // using the centre evicted chunks the streaming loop had just built.
+        // Player at the centre of chunk (0,0); the diagonal chunk is (2,2).
+        float nearest = ChunkManager.distanceToRect(256f, 256f, 1024f, 1024f, 512f);
+        float centre = (float) Math.hypot(1280f - 256f, 1280f - 256f);
+        assertEquals(1086.16f, nearest, 0.5f);
+        assertEquals(1448.15f, centre, 0.5f);
+        assertTrue("rectangle distance must be inside the last keep radius", nearest < 1398f);
+        assertTrue("centre distance was outside the last keep radius", centre > 1398f);
+        assertEquals(0f, ChunkManager.distanceToRect(700f, 700f, 512f, 512f, 512f), 0.001f);
+    }
+
+    @Test
     public void lodBandsAreStableAroundTheThresholds() {
         assertEquals("near", 0, ChunkManager.lodForDistance(120f, -1));
         assertEquals("medium", 1, ChunkManager.lodForDistance(400f, -1));

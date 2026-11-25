@@ -38,7 +38,7 @@ personaggi, veicoli, musica ed effetti sono generati proceduralmente dal codice.
 | Audio procedurale con volumi separati | implementato |
 | APK installabile e pipeline GitHub Actions | build automatica nel workflow |
 
-Le verifiche automatiche sono **44 test JVM verdi**: caricamento della mappa
+Le verifiche automatiche sono **45 test JVM verdi**: caricamento della mappa
 reale, conteggi OSM invariati, collisione sul bordo di un muro lungo, push-out da un
 footprint, camminata e corsa contro una facciata, auto a 34 m/s contro un edificio,
 percorso GPS che non attraversa footprint, strade presenti e contrastate in LOD 0/1/2,
@@ -162,9 +162,12 @@ La mappa completa non viene caricata come 71.844 oggetti Java.
   entra nel raggio di streaming.
 - Le cache hanno limiti espliciti: **16 chunk di edifici, 1.024 strade, 512 aree**.
   Quando un chunk viene scaricato, `releaseChunk()` libera la sua geometria.
-- Con il preset MEDIA la distanza di streaming è **900 m**; i chunk oltre circa
-  1.320 m vengono rimossi. LOD 1 e 2 disegnano **tutti** gli edifici come box
-  semplificati: il livello di dettaglio non elimina elementi.
+- Con il preset MEDIA la distanza di streaming è **900 m**; un chunk viene rimosso
+  quando il suo punto più vicino supera il raggio di conservazione (streaming + 750 m)
+  e non viene più toccato da 20 s. La distanza è misurata dal **rettangolo** del chunk,
+  non dal centro, così i chunk d'angolo non vengono ricostruiti e scartati in loop.
+  LOD 1 e 2 disegnano **tutti** gli edifici come box semplificati: il livello di
+  dettaglio non elimina elementi.
 - I 70 interni sono **on-demand**: esiste una sola mesh attiva, creata all'ingresso e
   distrutta all'uscita.
 - Per un dispositivo da 3 GB il default è **MEDIA (720p, 30 FPS, 900 m)**; il preset
