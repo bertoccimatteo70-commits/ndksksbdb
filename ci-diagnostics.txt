@@ -1,0 +1,163 @@
+exit=1 at Wed Nov 25 22:57:23 UTC 2026
+--- kvm
+crw-rw-rw- 1 root kvm 10, 232 Nov 25 22:41 /dev/kvm
+--- accel-check
+accel:
+0
+KVM (version 12) is installed and usable.
+accel
+--- sdkmanager
+Loading package information...                                                  Loading local repository...                                                     [                                       ] 3% Loading local repository...        [                                       ] 3% Fetch remote repository...         [=                                      ] 3% Fetch remote repository...         [=                                      ] 4% Fetch remote repository...         [=                                      ] 5% Fetch remote repository...         [==                                     ] 5% Fetch remote repository...         [==                                     ] 6% Fetch remote repository...         [==                                     ] 7% Fetch remote repository...         [==                                     ] 7% Computing updates...               [===                                    ] 8% Computing updates...               [===                                    ] 10% Computing updates...              [===                                    ] 10% Installing Android Emulator       [===                                    ] 10% Downloading emulator-linux_x64-169[====                                   ] 10% Downloading emulator-linux_x64-169[====                                   ] 11% Downloading emulator-linux_x64-169[====                                   ] 12% Downloading emulator-linux_x64-169[=====                                  ] 13% Downloading emulator-linux_x64-169[=====                                  ] 14% Downloading emulator-linux_x64-169[=====                                  ] 15% Downloading emulator-linux_x64-169[======                                 ] 15% Downloading emulator-linux_x64-169[======                                 ] 16% Downloading emulator-linux_x64-169[======                                 ] 17% Downloading emulator-linux_x64-169[=======                                ] 18% Downloading emulator-linux_x64-169[=======                                ] 19% Downloading emulator-linux_x64-169[=======                                ] 20% Downloading emulator-linux_x64-169[========                               ] 20% Downloading emulator-linux_x64-169[========                               ] 21% Downloading emulator-linux_x64-169[========                               ] 21% Unzipping...                      [========                               ] 21% Unzipping... emulator/            [========                               ] 21% Unzipping... emulator/resources/  [========                               ] 21% Unzipping... emulator/qsn         [========                               ] 21% Unzipping... emulator/emulator    [========                               ] 21% Unzipping... emulator/netsimd     [========                               ] 22% Unzipping... emulator/netsimd     [========                               ] 22% Unzipping... emulator/bin64/      [========                               ] 22% Unzipping... emulator/qemu/       [========                               ] 22% Unzipping... emulator/NOTICE.txt  [========                               ] 22% Unzipping... emulator/crashpad_han[========                               ] 22% Unzipping... emulator/source.prope[========                               ] 22% Unzipping... emulator/nimble_bridg[========                               ] 22% Unzipping... emulator/LICENSE     [========                               ] 22% Unzipping... emulator/lib/        [========                               ] 22% Unzipping... emulator/qemu-img    [========                               ] 22% Unzipping... emulator/include/    [========                               ] 22% Unzipping... emulator/NOTICE.csv  [========                               ] 22% Unzipping... emulator/lib64/      [========                               ] 22% Unzipping... emulator/emulator-che[========                               ] 22% Unzipping... emulator/crashreport [========                               ] 22% Unzipping... emulator/mksdcard    [========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/ma[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/sk[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/ma[========                               ] 22% Unzipping... emulator/resources/po[========                               ] 22% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/resources/sk[=========                              ] 23% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/bin64/e2fsck[=========                              ] 23% Unzipping... emulator/bin64/fsck.e[=========                              ] 23% Unzipping... emulator/bin64/tune2f[=========                              ] 23% Unzipping... emulator/bin64/resize[=========                              ] 23% Unzipping... emulator/bin64/mkfs.e[=========                              ] 23% Unzipping... emulator/qemu/linux-x[=========                              ] 24% Unzipping... emulator/qemu/linux-x[=========                              ] 25% Unzipping... emulator/qemu/linux-x[==========                             ] 25% Unzipping... emulator/qemu/linux-x[==========                             ] 26% Unzipping... emulator/qemu/linux-x[==========                             ] 26% Unzipping... emulator/lib/emulator[==========                             ] 26% Unzipping... emulator/lib/rtc_serv[==========                             ] 26% Unzipping... emulator/lib/advanced[==========                             ] 26% Unzipping... emulator/lib/cmake/  [==========                             ] 26% Unzipping... emulator/lib/emulator[==========                             ] 26% Unzipping... emulator/lib/control_[==========                             ] 26% Unzipping... emulator/lib/emulated[==========                             ] 26% Unzipping... emulator/lib/rtc_serv[==========                             ] 26% Unzipping... emulator/lib/emu-orig[==========                             ] 26% Unzipping... emulator/lib/hardware[==========                             ] 26% Unzipping... emulator/lib/pkgconfi[==========                             ] 26% Unzipping... emulator/lib/pc-bios/[==========                             ] 26% Unzipping... emulator/lib/snapshot[==========                             ] 26% Unzipping... emulator/lib/adb_serv[==========                             ] 26% Unzipping... emulator/lib/hostapd.[==========                             ] 26% Unzipping... emulator/lib/grpc_end[==========                             ] 26% Unzipping... emulator/lib/ca-bundl[==========                             ] 26% Unzipping... emulator/lib/ui_contr[==========                             ] 26% Unzipping... emulator/lib/snapshot[==========                             ] 26% Unzipping... emulator/lib/ice_conf[==========                             ] 26% Unzipping... emulator/lib/libflatb[==========                             ] 26% Unzipping... emulator/lib/emulator[==========                             ] 26% Unzipping... emulator/lib/waterfal[==========                             ] 26% Unzipping... emulator/lib/emulated[==========                             ] 26% Unzipping... emulator/lib/cmake/fl[==========                             ] 26% Unzipping... emulator/lib/pkgconfi[==========                             ] 26% Unzipping... emulator/lib/pc-bios/[==========                             ] 26% Unzipping... emulator/include/flat[==========                             ] 26% Unzipping... emulator/lib64/libgli[==========                             ] 26% Unzipping... emulator/lib64/libpro[==========                             ] 26% Unzipping... emulator/lib64/qt/   [==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libgfx[==========                             ] 26% Unzipping... emulator/lib64/gles_l[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/vulkan[==========                             ] 26% Unzipping... emulator/lib64/gles_s[==========                             ] 26% Unzipping... emulator/lib64/libemu[==========                             ] 26% Unzipping... emulator/lib64/libpro[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libtcm[==========                             ] 26% Unzipping... emulator/lib64/libima[==========                             ] 26% Unzipping... emulator/lib64/libc++[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libabs[==========                             ] 26% Unzipping... emulator/lib64/gles_a[==========                             ] 26% Unzipping... emulator/lib64/libsha[==========                             ] 26% Unzipping... emulator/lib64/libc++[==========                             ] 26% Unzipping... emulator/lib64/qt/res[==========                             ] 26% Unzipping... emulator/lib64/qt/lib[==========                             ] 26% Unzipping... emulator/lib64/qt/tra[==========                             ] 26% Unzipping... emulator/lib64/qt/plu[==========                             ] 26% Unzipping... emulator/lib64/qt/res[==========                             ] 27% Unzipping... emulator/lib64/qt/res[==========                             ] 27% Unzipping... emulator/lib64/qt/lib[===========                            ] 28% Unzipping... emulator/lib64/qt/lib[===========                            ] 29% Unzipping... emulator/lib64/qt/lib[===========                            ] 30% Unzipping... emulator/lib64/qt/lib[============                           ] 30% Unzipping... emulator/lib64/qt/lib[============                           ] 30% Unzipping... emulator/lib64/qt/tra[============                           ] 30% Unzipping... emulator/lib64/qt/plu[============                           ] 30% Unzipping... emulator/lib64/gles_l[============                           ] 31% Unzipping... emulator/lib64/gles_l[============                           ] 31% Unzipping... emulator/lib64/vulkan[============                           ] 32% Unzipping... emulator/lib64/vulkan[============                           ] 32% Unzipping... emulator/lib64/gles_s[============                           ] 32% Unzipping... emulator/lib64/gles_a[=============                          ] 33% Unzipping... emulator/lib64/gles_a[=====================                  ] 55% Unzipping... emulator/lib64/gles_a[=====================                  ] 55% Installing Intel x86_64 Atom Syste[=====================                  ] 55% Downloading x86_64-30_r11.zip... e[======================                 ] 55% Downloading x86_64-30_r11.zip... e[======================                 ] 56% Downloading x86_64-30_r11.zip... e[======================                 ] 57% Downloading x86_64-30_r11.zip... e[=======================                ] 58% Downloading x86_64-30_r11.zip... e[=======================                ] 59% Downloading x86_64-30_r11.zip... e[=======================                ] 60% Downloading x86_64-30_r11.zip... e[========================               ] 60% Downloading x86_64-30_r11.zip... e[========================               ] 61% Downloading x86_64-30_r11.zip... e[========================               ] 62% Downloading x86_64-30_r11.zip... e[=========================              ] 63% Downloading x86_64-30_r11.zip... e[=========================              ] 64% Downloading x86_64-30_r11.zip... e[=========================              ] 65% Downloading x86_64-30_r11.zip... e[==========================             ] 65% Downloading x86_64-30_r11.zip... e[==========================             ] 66% Downloading x86_64-30_r11.zip... e[==========================             ] 66% Unzipping... emulator/lib64/gles_a[==========================             ] 66% Unzipping... x86_64/VerifiedBootPa[==========================             ] 66% Unzipping... x86_64/advancedFeatur[==========================             ] 66% Unzipping... x86_64/build.prop    [==========================             ] 66% Unzipping... x86_64/encryptionkey.[==========================             ] 66% Unzipping... x86_64/kernel-ranchu [==========================             ] 67% Unzipping... x86_64/kernel-ranchu [==========================             ] 67% Unzipping... x86_64/ramdisk.img   [==========================             ] 67% Unzipping... x86_64/source.propert[==========================             ] 67% Unzipping... x86_64/system.img    [===========================            ] 68% Unzipping... x86_64/system.img    [===========================            ] 69% Unzipping... x86_64/system.img    [===========================            ] 70% Unzipping... x86_64/system.img    [============================           ] 70% Unzipping... x86_64/system.img    [============================           ] 71% Unzipping... x86_64/system.img    [============================           ] 72% Unzipping... x86_64/system.img    [=============================          ] 73% Unzipping... x86_64/system.img    [=============================          ] 74% Unzipping... x86_64/system.img    [=============================          ] 75% Unzipping... x86_64/system.img    [==============================         ] 75% Unzipping... x86_64/system.img    [==============================         ] 76% Unzipping... x86_64/system.img    [==============================         ] 77% Unzipping... x86_64/system.img    [==============================         ] 77% Unzipping... x86_64/userdata.img  [==============================         ] 77% Unzipping... x86_64/vendor.img    [==============================         ] 77% Unzipping... x86_64/data/local.pro[==============================         ] 77% Unzipping... x86_64/data/misc/apns[==============================         ] 77% Unzipping... x86_64/data/misc/emul[==============================         ] 77% Unzipping... x86_64/data/misc/gcec[==============================         ] 77% Unzipping... x86_64/data/misc/wifi[==============================         ] 77% Unzipping... x86_64/data/system/di[==============================         ] 78% Unzipping... x86_64/data/system/di[=======================================] 100% Unzipping... x86_64/data/system/d
+
+--- avd
+Loading local repository...                                                     [=========                              ] 25% Loading local repository...       [=========                              ] 25% Fetch remote repository...        [=======================================] 100% Fetch remote repository...       
+Auto-selecting single ABI x86_64
+Available Android Virtual Devices:
+    Name: pta
+  Device: pixel_2 (Google)
+    Path: /home/runner/.android/avd/pta.avd
+  Target: Default Android System Image
+          Based on: Android 11.0 ("R") Tag/ABI: default/x86_64
+  Sdcard: 512 MB
+/home/runner/.android/avd/pta.ini
+total 16
+drwxr-xr-x 3 runner runner 4096 Nov 25 22:41 .
+drwxr-xr-x 3 runner runner 4096 Nov 25 22:41 ..
+drwxr-xr-x 2 runner runner 4096 Nov 25 22:41 pta.avd
+-rw-r--r-- 1 runner runner   80 Nov 25 22:41 pta.ini
+--- emulator
+DEBUG   | Waiting for exit signal RenderThread @0x5614f19e01e0
+DEBUG   | Waiting for exit signal RenderThread @0x56150476bc20
+DEBUG   | Waiting for exit signal RenderThread @0x56150476b4a0
+DEBUG   | ColorBuffer 135, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 137, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 138, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 140, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 142, 1243x1024, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 5095424, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 143, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 145, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 146, 1243x1024, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 5095424, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 147, 1243x1024, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 5095424, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 148, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 150, 76x82, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 24928, type: 0, props: 15 / 1]
+VERBOSE | Created RenderThread. Active RenderThreads: 23
+DEBUG   | Exited a RenderThread @0x561504c82f00
+VERBOSE | Destroyed RenderThread. Active RenderThreads: 22
+DEBUG   | Exited a RenderThread @0x5614f19e01e0
+VERBOSE | Destroyed RenderThread. Active RenderThreads: 21
+DEBUG   | Exited a RenderThread @0x56150476bc20
+VERBOSE | Destroyed RenderThread. Active RenderThreads: 20
+DEBUG   | Exited a RenderThread @0x56150476a780
+VERBOSE | Destroyed RenderThread. Active RenderThreads: 19
+DEBUG   | Exited a RenderThread @0x56150476b4a0
+VERBOSE | Destroyed RenderThread. Active RenderThreads: 18
+DEBUG   | Started new RenderThread (total 18) @0x56150476b2c0
+DEBUG   | ColorBuffer 151, 1080x126, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 544320, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 154, 1x1, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 16, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 155, 76x82, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 24928, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 157, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 158, 76x82, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 24928, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 159, 76x82, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 24928, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 160, 1080x126, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 544320, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 161, 1080x126, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 544320, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 163, 1080x126, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 544320, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 164, 1080x63, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 276480, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 166, 1080x63, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 276480, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 167, 1080x63, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 276480, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 168, 1080x126, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 544320, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 169, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+VERBOSE | Created RenderThread. Active RenderThreads: 19
+DEBUG   | Started new RenderThread (total 19) @0x56150476b0e0
+DEBUG   | ColorBuffer 170, 1080x1920, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+VERBOSE | Created RenderThread. Active RenderThreads: 20
+DEBUG   | Started new RenderThread (total 20) @0x5614f19e01e0
+DEBUG   | ColorBuffer 173, 1x1, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 16, type: 0, props: 15 / 1]
+VERBOSE | Created RenderThread. Active RenderThreads: 21
+DEBUG   | Started new RenderThread (total 21) @0x561504c83680
+DEBUG   | ColorBuffer 176, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 177, 1243x1024, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 5095424, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 178, 126x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 544320, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 179, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 180, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+VERBOSE | Created RenderThread. Active RenderThreads: 22
+DEBUG   | Started new RenderThread (total 22) @0x56150476b4a0
+DEBUG   | Waiting for exit signal RenderThread @0x56150476b2c0
+DEBUG   | ColorBuffer 183, 76x82, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 24928, type: 0, props: 15 / 1]
+VERBOSE | Created RenderThread. Active RenderThreads: 23
+DEBUG   | Exited a RenderThread @0x56150476b2c0
+VERBOSE | Destroyed RenderThread. Active RenderThreads: 22
+DEBUG   | Started new RenderThread (total 22) @0x5614f2db6960
+DEBUG   | ColorBuffer 186, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 189, 1x1, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 16, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 190, 76x82, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 24928, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 191, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 192, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 193, 76x82, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 24928, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 194, 1243x1024, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 5095424, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 196, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 197, 76x82, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 24928, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 198, 126x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 544320, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 199, 1920x63, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 491520, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 201, 1920x63, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 491520, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 202, 126x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 544320, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 203, 1920x63, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 491520, type: 0, props: 15 / 1]
+/buildbot/src/googleplex-android/emu-37-3-release/hardware/google/gfxstream/host/gl/glestranslator/gles_v2/gles_v2_imp.cpp:glGetUniformLocation:3136 error 0x501
+DEBUG   | ColorBuffer 204, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 205, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | ColorBuffer 206, 1920x1080, VK_FORMAT_R8G8B8A8_UNORM, Memory [size: 8294400, type: 0, props: 15 / 1]
+DEBUG   | Waiting for exit signal RenderThread @0x5614f2db6960
+--- devices
+List of devices attached
+emulator-5554	device
+
+--- install
+Performing Streamed Install
+Success
+--- start
+Starting: Intent { cmp=it.pta.game/.AndroidLauncher (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: it.pta.game/.AndroidLauncher
+TotalTime: 2810
+WaitTime: 2813
+Complete
+--- logcat PTA
+--------- beginning of kernel
+--------- beginning of main
+--------- beginning of system
+11-25 22:52:17.955  2482  2506 I PTA     : startup: settings
+11-25 22:52:17.958  2482  2506 I PTA     : memory after settings: 2MB used, 192MB allocated, 192MB max, native 23MB
+11-25 22:52:17.958  2482  2506 I PTA     : startup: loading map
+11-25 22:52:18.046  2482  2506 I PTA     : startup: map loaded buildings=71844 roads=26296 areas=4785 pois=2321
+11-25 22:52:18.046  2482  2506 I PTA     : memory after map index: 8MB used, 192MB allocated, 192MB max, native 23MB
+11-25 22:52:18.048  2482  2506 I PTA     : startup: renderer
+11-25 22:52:18.246  2482  2506 E PTA     : world shader: Precisions for uniform u_camPos do not match between the vertex and fragment shader
+11-25 22:52:18.256  2482  2506 I PTA     : memory after renderer: 8MB used, 192MB allocated, 192MB max, native 23MB
+11-25 22:52:18.256  2482  2506 I PTA     : startup: ui assets
+11-25 22:52:18.340  2482  2506 I PTA     : memory after ui assets: 10MB used, 192MB allocated, 192MB max, native 30MB
+11-25 22:52:18.340  2482  2506 I PTA     : startup: audio
+11-25 22:52:18.358  2482  2506 I PTA     : ambience: rain, wind and city beds streamed from assets
+11-25 22:52:18.359  2482  2506 I PTA     : startup: world
+11-25 22:52:18.545  2482  2506 I PTA     : world: OSM buildings=71844 roads=26296 areas=4785 pois=2321 interiors=70
+11-25 22:52:18.560  2482  2506 I PTA     : memory after world: 27MB used, 192MB allocated, 192MB max, native 30MB
+11-25 22:52:18.561  2482  2506 I PTA     : startup: menu
+11-25 22:52:18.571  2482  2506 I PTA     : memory after menu: 27MB used, 192MB allocated, 192MB max, native 30MB
+11-25 22:52:18.571  2482  2506 I PTA     : startup: intro
+11-25 22:52:18.572  2482  2506 I PTA     : smoke: starting an automated new game
+11-25 22:52:18.579  2482  2506 I PTA     : loading start: Nuova partita · preparazione della città position=40.08344,-11.0574
+11-25 22:52:18.579  2482  2506 I PTA     : startup complete
+11-25 22:52:18.582  2482  2506 E PTA     : startup/render failure
+11-25 22:52:18.582  2482  2506 E PTA     : java.lang.IllegalStateException: An attempted fetch uniform from uncompiled shader 
+11-25 22:52:18.582  2482  2506 E PTA     : Precisions for uniform u_camPos do not match between the vertex and fragment shader
+11-25 22:52:18.582  2482  2506 E PTA     : 
+11-25 22:52:18.582  2482  2506 E PTA     : 	at com.badlogic.gdx.graphics.glutils.ShaderProgram.fetchUniformLocation(ShaderProgram.java:305)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at com.badlogic.gdx.graphics.glutils.ShaderProgram.fetchUniformLocation(ShaderProgram.java:294)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at com.badlogic.gdx.graphics.glutils.ShaderProgram.setUniformMatrix(ShaderProgram.java:526)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at com.badlogic.gdx.graphics.glutils.ShaderProgram.setUniformMatrix(ShaderProgram.java:517)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at it.pta.render.WorldRenderer.beginFrame(WorldRenderer.java:165)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at it.pta.game.PtaGame.renderScene(PtaGame.java:232)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at it.pta.game.PtaGame.renderFrame(PtaGame.java:209)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at it.pta.game.PtaGame.render(PtaGame.java:142)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at com.badlogic.gdx.backends.android.AndroidGraphics.onDrawFrame(AndroidGraphics.java:505)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at android.opengl.GLSurfaceView$GLThread.guardedRun(GLSurfaceView.java:1573)
+11-25 22:52:18.582  2482  2506 E PTA     : 	at android.opengl.GLSurfaceView$GLThread.run(GLSurfaceView.java:1272)
