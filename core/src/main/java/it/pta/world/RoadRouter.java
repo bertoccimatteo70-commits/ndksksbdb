@@ -2,8 +2,6 @@ package it.pta.world;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.PriorityQueue;
 
 /**
@@ -18,8 +16,13 @@ import java.util.PriorityQueue;
  *
  * <p>The heuristic is the straight-line distance to the destination: no segment can
  * be shorter than the line between its ends, so the heuristic never overestimates and
- * A* stays optimal. Building the graph is expensive and is therefore done once, on a
- * worker thread, behind a synchronized flag.</p>
+ * A* stays optimal.</p>
+ *
+ * <p>The graph is not the whole province: it only covers a corridor around the
+ * requested route. Building the complete 149.225-node / 280.992-edge graph filled
+ * about 190 MB of Java heap on a 192 MB process and killed the game with
+ * OutOfMemoryError while the city was streaming at the same time. A corridor keeps
+ * the graph small, is fast to build and is rebuilt only when a route leaves it.</p>
  *
  * <p>Plain Java on purpose: it runs on the JVM tests without OpenGL, and in the game
  * from a background thread.</p>
@@ -28,7 +31,11 @@ public final class RoadRouter {
     /** Distance under which two ways are considered to share a junction node. */
     private static final double NODE_QUANTUM = 0.5;
     /** Upper bound on expanded nodes, so a broken graph cannot hang a route request. */
-    private static final int MAX_EXPANSIONS = 400000;
+    private static final int MAX_EXPANSIONS = 120000;
+    /** Corridor half-width of the first graph build, metres. */
+    private static final float FIRST_BAND = 700f;
+    /** Wider retry when the narrow corridor has no path (one-way systems, rivers). */
+    private static final float SECOND_BAND = 2200f;
 
     public static final class Route {
         public final boolean found;
@@ -72,17 +79,79 @@ public final class RoadRouter {
     private float[] edgeCost = new float[8192];
     private int edgeCount;
 
-    private final Map<Long, Integer> nodeIds = new HashMap<>();
+    /**
+     * Junction index: packed long keys and int ids in open addressing. The previous
+     * {@code HashMap<Long, Integer>} allocated three objects per junction (149k
+     * junctions on the province-wide graph) and was a large part of the heap cost.
+     */
+    private static final class NodeIndex {
+        private long[] keys = new long[8192];
+        private int[] vals = new int[8192]; // 0 = empty, otherwise node id + 1
+        private int size;
+
+        void clear() {
+            if (size > 0) {
+                Arrays.fill(vals, 0);
+            }
+            size = 0;
+        }
+
+        int get(long key) {
+            int mask = vals.length - 1;
+            int i = hash(key) & mask;
+            while (vals[i] != 0) {
+                if (keys[i] == key) {
+                    return vals[i] - 1;
+                }
+                i = (i + 1) & mask;
+            }
+            return -1;
+        }
+
+        void put(long key, int id) {
+            if ((size + 1) * 10 >= vals.length * 7) {
+                grow();
+            }
+            int mask = vals.length - 1;
+            int i = hash(key) & mask;
+            while (vals[i] != 0) {
+                if (keys[i] == key) {
+                    vals[i] = id + 1;
+                    return;
+                }
+                i = (i + 1) & mask;
+            }
+            keys[i] = key;
+            vals[i] = id + 1;
+            size++;
+        }
+
+        private static int hash(long key) {
+            long h = key * 0x9E3779B97F4A7C15L;
+            return (int) (h ^ (h >>> 32));
+        }
+
+        private void grow() {
+            long[] oldKeys = keys;
+            int[] oldVals = vals;
+            keys = new long[oldKeys.length * 2];
+            vals = new int[oldKeys.length * 2];
+            size = 0;
+            for (int i = 0; i < oldKeys.length; i++) {
+                if (oldVals[i] != 0) {
+                    put(oldKeys[i], oldVals[i] - 1);
+                }
+            }
+        }
+    }
+
+    private final NodeIndex nodeIds = new NodeIndex();
     private volatile boolean built;
+    private float builtMinX, builtMinZ, builtMaxX, builtMaxZ, builtBand = -1f;
 
     public RoadRouter(MapData map) {
         this.map = map;
         Arrays.fill(head, -1);
-    }
-
-    /** Builds the graph. Safe to call from any thread; later calls return immediately. */
-    public synchronized void prewarm() {
-        ensureGraph();
     }
 
     public int nodeCount() {
@@ -104,7 +173,22 @@ public final class RoadRouter {
      */
     public Route route(float startX, float startZ, float targetX, float targetZ,
                        float headingX, float headingZ) {
-        ensureGraph();
+        ensureGraph(startX, startZ, targetX, targetZ, FIRST_BAND);
+        Route route = routeOnGraph(startX, startZ, targetX, targetZ, headingX, headingZ);
+        if (!route.found) {
+            // The narrow corridor can miss the only legal path around a one-way
+            // system; retry once with a wider corridor before giving up.
+            ensureGraph(startX, startZ, targetX, targetZ, SECOND_BAND);
+            Route wider = routeOnGraph(startX, startZ, targetX, targetZ, headingX, headingZ);
+            if (wider.found) {
+                return wider;
+            }
+        }
+        return route;
+    }
+
+    private Route routeOnGraph(float startX, float startZ, float targetX, float targetZ,
+                               float headingX, float headingZ) {
         if (nodeCount == 0 || edgeCount == 0) {
             return Route.none("Rete stradale non disponibile");
         }
@@ -312,13 +396,49 @@ public final class RoadRouter {
         return distance(nodeX[from], nodeZ[from], nodeX[target], nodeZ[target]);
     }
 
-    private synchronized void ensureGraph() {
-        if (built) {
+    /**
+     * Builds the junction graph for a corridor around the requested route. The graph
+     * is reused while both ends stay inside the built box with the same band, and
+     * rebuilt otherwise. Only the chunks near the straight line between the two ends
+     * are decoded, so a cross-province route costs a small fraction of the map.
+     */
+    private synchronized void ensureGraph(float sx, float sz, float tx, float tz, float band) {
+        if (built && band == builtBand
+                && sx >= builtMinX && sx <= builtMaxX && sz >= builtMinZ && sz <= builtMaxZ
+                && tx >= builtMinX && tx <= builtMaxX && tz >= builtMinZ && tz <= builtMaxZ) {
             return;
         }
+        // Start from a clean graph: stale nodes and edges of a previous corridor must
+        // not be reused, they belong to a different part of the province.
+        nodeCount = 0;
+        edgeCount = 0;
+        nodeIds.clear();
+
+        float dx = tx - sx, dz = tz - sz;
+        float len2 = Math.max(1e-3f, dx * dx + dz * dz);
+        float pad = band + map.chunkSize;
+        builtMinX = Math.min(sx, tx) - pad;
+        builtMaxX = Math.max(sx, tx) + pad;
+        builtMinZ = Math.min(sz, tz) - pad;
+        builtMaxZ = Math.max(sz, tz) + pad;
+        builtBand = band;
+        built = true;
+
+        int c0 = map.cx(builtMinX), c1 = map.cx(builtMaxX);
+        int r0 = map.cz(builtMinZ), r1 = map.cz(builtMaxZ);
         boolean[] seenRoad = new boolean[map.roadCount];
-        for (int cz = map.minCZ; cz < map.minCZ + map.nCZ; cz++) {
-            for (int cx = map.minCX; cx < map.minCX + map.nCX; cx++) {
+        for (int cz = r0; cz <= r1; cz++) {
+            for (int cx = c0; cx <= c1; cx++) {
+                float ccx = (cx + 0.5f) * map.chunkSize;
+                float ccz = (cz + 0.5f) * map.chunkSize;
+                float t = ((ccx - sx) * dx + (ccz - sz) * dz) / len2;
+                t = Math.max(0f, Math.min(1f, t));
+                float px = sx + dx * t, pz = sz + dz * t;
+                // Skip chunks outside the corridor (the half diagonal of a chunk is
+                // ~362 m, so the pad keeps every chunk the corridor may cross).
+                if (Math.hypot(ccx - px, ccz - pz) > band + 400f) {
+                    continue;
+                }
                 for (int idx : map.roadsIn(cx, cz)) {
                     if (idx < 0 || idx >= seenRoad.length || seenRoad[idx]) {
                         continue;
@@ -353,7 +473,6 @@ public final class RoadRouter {
                 }
             }
         }
-        built = true;
     }
 
     private boolean crossesBuilding(float ax, float az, float bx, float bz) {
@@ -373,8 +492,8 @@ public final class RoadRouter {
     private int nodeFor(float x, float z, boolean create) {
         long key = ((long) Math.round(x / NODE_QUANTUM) << 32)
                 ^ (Math.round(z / NODE_QUANTUM) & 0xffffffffL);
-        Integer old = nodeIds.get(key);
-        if (old != null) {
+        int old = nodeIds.get(key);
+        if (old >= 0) {
             return old;
         }
         if (!create) {

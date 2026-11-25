@@ -104,6 +104,15 @@ public final class MeshBuilder {
     private static final float[] EMPTY_FLOATS = new float[0];
     private static final short[] EMPTY_SHORTS = new short[0];
 
+    /** Bytes this builder's arrays currently occupy, used by the recycling pool. */
+    public long capacityBytes() {
+        return (long) data.length * 4L + (long) indices.length * 2L;
+    }
+
+    public int capacityVertices() {
+        return data.length / FLOATS_PER_VERTEX;
+    }
+
     /**
      * Frees the CPU staging arrays once the data has been uploaded to the GPU.
      * The builder must not be used again afterwards.

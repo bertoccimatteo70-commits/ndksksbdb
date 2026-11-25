@@ -201,8 +201,12 @@ public final class ChunkManager implements Disposable {
                         forward = (dx / len) * focusX + (dz / len) * focusZ;
                     }
                 }
-                // The cone in front of the player is loaded earlier than the sides.
-                float reach = viewDistance + 180f + Math.max(0f, forward) * 320f;
+                // The cone in front of the player is loaded earlier than the sides,
+                // but never past the eviction radius. The old forward bonus reached
+                // viewDistance + 500 m while chunks were evicted at viewDistance +
+                // 420 m, so each forward chunk was built and discarded a few frames
+                // later: thousands of rebuilds and the heap churn behind the OOM.
+                float reach = viewDistance + 350f + Math.max(0f, forward) * 150f;
                 if (dist > reach) {
                     continue;
                 }
@@ -227,7 +231,7 @@ public final class ChunkManager implements Disposable {
         // first, which could starve the chunk under the player for a minute.
         requests.sort(Comparator.comparingDouble(a -> a.score));
         for (Request q : requests) {
-            if (building.size() >= 5) {
+            if (building.size() >= 3) {
                 break;
             }
             if (building.contains(q.key)) {
@@ -362,11 +366,14 @@ public final class ChunkManager implements Disposable {
         // Removal happens after the iteration: dropping a chunk inside the loop would
         // modify the map being iterated and throw ConcurrentModificationException on
         // the GL thread (caught on the emulator as a fatal render failure).
+        // Keep a margin between the request radius and the eviction radius, so a
+        // chunk that is built is never thrown away by the next frame's eviction.
+        float keepRadius = viewDistance + 750f;
         for (Chunk c : chunks.values()) {
             float dist = (float) Math.hypot(c.centerX - pos.x, c.centerZ - pos.z);
-            boolean out = dist > viewDistance + 420f;
+            boolean out = dist > keepRadius;
             boolean old = frame - c.lastUsed > 90;
-            if (out || (old && dist > viewDistance + 200f)) {
+            if (out || (old && dist > keepRadius - 200f)) {
                 stale.add(c);
                 continue;
             }
@@ -636,5 +643,6 @@ public final class ChunkManager implements Disposable {
         finished.clear();
         building.clear();
         map.releaseAllChunks();
+        MeshBuilderPool.clear();
     }
 }

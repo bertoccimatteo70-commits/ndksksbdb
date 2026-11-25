@@ -170,15 +170,11 @@ public final class World implements PoliceSystem.PoliceHost {
             t.setPriority(Thread.NORM_PRIORITY - 1);
             return t;
         });
-        // The junction graph decodes every drivable way of the province: build it off
-        // the render thread so the first route request never stalls a frame.
-        gpsPool.execute(() -> {
-            long t0 = System.nanoTime();
-            roadRouter.prewarm();
-            gpsGraphStats = roadRouter.nodeCount() + " nodi / " + roadRouter.edgeCount()
-                    + " archi in " + ((System.nanoTime() - t0) / 1000000) + " ms";
-            Gdx.app.log("PTA", "gps graph: " + gpsGraphStats);
-        });
+        // The junction graph is built on demand, only for the corridor of the route
+        // being planned (RoadRouter). Decoding the whole province here allocated about
+        // 190 MB of Java heap while the city was streaming and killed the process with
+        // OutOfMemoryError on the router thread.
+        gpsGraphStats = "grafo stradale in attesa della prima rotta";
 
         Content.init(map, landmarksJson);
         Gdx.app.log("PTA", "world: OSM buildings=" + map.buildingCount
@@ -1439,14 +1435,24 @@ public final class World implements PoliceSystem.PoliceHost {
         gpsPool.execute(() -> {
             RoadRouter.Route r = null;
             try {
+                long t0 = System.nanoTime();
                 r = roadRouter.route(sx, sz, tx, tz, hx, hz);
+                gpsGraphStats = roadRouter.nodeCount() + " nodi / " + roadRouter.edgeCount()
+                        + " archi in " + ((System.nanoTime() - t0) / 1000000) + " ms (corridoio)";
+            } catch (OutOfMemoryError oom) {
+                // A router failure must never take the process down: drop the graph,
+                // report it and let the player drive without guidance.
+                Gdx.app.error("PTA", "gps router out of memory", oom);
+                gpsAvailable = false;
+                gpsMessage = "Navigatore non disponibile su questo dispositivo";
             } catch (Throwable t) {
                 Gdx.app.error("PTA", "gps route failed", t);
+            } finally {
+                if (r != null) {
+                    gpsPending.set(r);
+                }
+                gpsBusy.set(false);
             }
-            if (r != null) {
-                gpsPending.set(r);
-            }
-            gpsBusy.set(false);
         });
     }
 

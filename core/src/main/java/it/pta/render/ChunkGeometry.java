@@ -16,7 +16,7 @@ import java.util.List;
 public final class ChunkGeometry {
     public final int cx, cz, lod;
     public final List<MeshBuilder> parts = new ArrayList<>();
-    public final MeshBuilder water = new MeshBuilder();
+    public MeshBuilder water = new MeshBuilder();
     /** Lamp/headlight glow positions, xyz triples, for night-time light blooms. */
     public float[] glows = new float[0];
     public int glowCount;
@@ -37,7 +37,7 @@ public final class ChunkGeometry {
 
     public MeshBuilder current() {
         if (current == null || current.vertexCount > MeshBuilder.MAX_VERTICES - 1200) {
-            current = new MeshBuilder();
+            current = MeshBuilderPool.acquire();
             parts.add(current);
         }
         return current;
@@ -94,11 +94,15 @@ public final class ChunkGeometry {
     public float[] releaseCpu() {
         finish();
         float[] lampPositions = java.util.Arrays.copyOf(glows, glowCount * 3);
+        // The buffers go back to the pool instead of being dropped: the next chunk
+        // reuses the same arrays, so streaming stops producing megabytes of garbage
+        // per second. The pool has its own hard byte cap.
         for (MeshBuilder b : parts) {
-            b.release();
+            MeshBuilderPool.recycle(b);
         }
         parts.clear();
-        water.release();
+        MeshBuilderPool.recycle(water);
+        water = new MeshBuilder();
         current = null;
         glows = lampPositions;
         return lampPositions;

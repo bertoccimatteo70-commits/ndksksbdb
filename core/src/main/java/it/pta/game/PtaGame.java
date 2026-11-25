@@ -162,6 +162,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         }
         renderer.chunkManager().trim(rig.camera.position, 9);
         map.releaseAllChunks();
+        it.pta.render.MeshBuilderPool.clear();
         if (settings.preset != Settings.Preset.BASE) {
             settings.applyPreset(Settings.Preset.BASE);
             applySettings();
@@ -375,6 +376,10 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         }
         degradeCooldown = 6f;
         memory.countDegradation();
+        if (pressure == MemoryBudget.Pressure.CRITICAL) {
+            // Give back the recycled vertex buffers as well: they are a cache, not data.
+            it.pta.render.MeshBuilderPool.clear();
+        }
         int keep = pressure == MemoryBudget.Pressure.CRITICAL ? 25 : 60;
         int removed = renderer.chunkManager().trim(rig.camera.position, keep);
         if (pressure == MemoryBudget.Pressure.CRITICAL && mode == Mode.PLAY
