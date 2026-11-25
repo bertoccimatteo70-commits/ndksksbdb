@@ -136,6 +136,10 @@ jobs:
               echo "--- start"; tail -n 15 start.log 2>/dev/null
               echo "--- logcat PTA"; adb logcat -d -s PTA:* 2>/dev/null | tail -n 60
             } > ci-diagnostics.txt
+            # The diagnostics go to a scratch branch, then HEAD returns to the branch
+            # the job was building: leaving it on ci-logs made the later version-bump
+            # commit fail to push to main.
+            BRANCH="$(git rev-parse --abbrev-ref HEAD)"
             git config user.name "pta-ci"
             git config user.email "pta-ci@users.noreply.github.com"
             git checkout -q -B ci-logs
@@ -144,6 +148,7 @@ jobs:
             git push -q -f origin ci-logs >/dev/null 2>&1 || true
             gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
               -f body="$(head -c 18000 ci-diagnostics.txt)" >/dev/null 2>&1 || true
+            git checkout -q "$BRANCH" >/dev/null 2>&1 || true
             exit "$code"
           }
           trap publish EXIT

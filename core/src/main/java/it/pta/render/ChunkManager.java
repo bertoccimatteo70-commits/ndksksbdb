@@ -357,17 +357,24 @@ public final class ChunkManager implements Disposable {
 
     private void evict(Vector3 pos) {
         ArrayList<Chunk> live = new ArrayList<>();
+        ArrayList<Chunk> stale = new ArrayList<>();
         long bytes = 0;
+        // Removal happens after the iteration: dropping a chunk inside the loop would
+        // modify the map being iterated and throw ConcurrentModificationException on
+        // the GL thread (caught on the emulator as a fatal render failure).
         for (Chunk c : chunks.values()) {
             float dist = (float) Math.hypot(c.centerX - pos.x, c.centerZ - pos.z);
-            boolean stale = dist > viewDistance + 420f;
+            boolean out = dist > viewDistance + 420f;
             boolean old = frame - c.lastUsed > 90;
-            if (stale || (old && dist > viewDistance + 200f)) {
-                dropChunk(c);
+            if (out || (old && dist > viewDistance + 200f)) {
+                stale.add(c);
                 continue;
             }
             live.add(c);
             bytes += c.totalBytes();
+        }
+        for (Chunk c : stale) {
+            dropChunk(c);
         }
         // The byte budget is a hard limit, not a hint: the farthest chunks go first,
         // but the 3x3 around the player is never touched so the ground under the

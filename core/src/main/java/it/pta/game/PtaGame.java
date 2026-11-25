@@ -549,8 +549,12 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
 
     private void advanceLoading(float delta) {
         loadingTime += delta;
-        float progress = renderer.chunkManager().progressAround(rig.camera.position, 260f);
-        int near = Math.max(1, renderer.chunkManager().chunksAround(rig.camera.position, 260f));
+        // One chunk ring around the player: 260 m only contained the centre chunk
+        // (centres are 512 m apart), so the bar reached 100% while eight of the nine
+        // chunks the camera sees were still missing.
+        float radius = map.chunkSize * 1.5f;
+        float progress = renderer.chunkManager().progressAround(rig.camera.position, radius);
+        int near = Math.max(1, renderer.chunkManager().chunksAround(rig.camera.position, radius));
         int ready = Math.round(near * progress);
         ui.loadingProgress = progress;
         ui.loadingDetail = ready + " / " + near + " zone pronte · "
