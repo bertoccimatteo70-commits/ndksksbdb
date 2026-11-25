@@ -167,7 +167,17 @@ jobs:
           sudo apt-get install -y -qq libpulse0 libgl1 libnss3 libxcomposite1 libxcursor1 \
             libxi6 libxtst6 libxrandr2 libx11-6 libasound2t64 libxcb1 libxcb-xfixes0 \
             >/dev/null 2>&1 || true
-          echo "kvm: $(ls -l /dev/kvm 2>&1 || true)"
+          # The hosted runner ships /dev/kvm but the build user is not in the kvm
+          # group, so the emulator refuses to start x86_64 with "This user doesn't
+          # have permissions to use KVM": that was the real reason behind every
+          # "the emulator process exited during boot".
+          echo "kvm before: $(ls -l /dev/kvm 2>&1 || true)"
+          sudo usermod -aG kvm "$USER" 2>/dev/null || true
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          echo "kvm after: $(ls -l /dev/kvm 2>&1 || true)"
+          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+            echo "::warning::/dev/kvm is not writable for $(id -un); the emulator cannot use hardware acceleration here"
+          fi
           timeout 600 "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "emulator" \
             "platform-tools" "system-images;android-30;default;x86_64" < /dev/null \
             > sdk-install.log 2>&1 || fail "sdkmanager failed"
