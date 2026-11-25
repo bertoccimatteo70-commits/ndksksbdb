@@ -58,6 +58,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     private float memoryLogTimer;
     private boolean smokeTest;
     private float smokeTime;
+    private int oomRecoveries;
 
     /** Enables the automated CI walkthrough (see AndroidLauncher). */
     public void setSmokeTest(boolean value) {
@@ -78,6 +79,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
     private void initGame() {
         Gdx.app.log("PTA", "startup: settings");
         settings = Settings.load();
+        Gdx.app.log("PTA", memory.phase("after settings"));
         Gdx.app.log("PTA", "startup: loading map");
         com.badlogic.gdx.files.FileHandle mapAsset = Gdx.files.internal("map/pta_map.bin");
         com.badlogic.gdx.files.FileHandle mapLocal = Gdx.files.local("world/pta_map.bin");
@@ -89,12 +91,16 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         Gdx.app.log("PTA", "startup: map loaded buildings=" + map.buildingCount
                 + " roads=" + map.roadCount + " areas=" + map.areaCount
                 + " pois=" + map.poiCount);
+        Gdx.app.log("PTA", memory.phase("after map index"));
         String missionsJson = Gdx.files.internal("data/missions.json").readString("UTF-8");
         String landmarksJson = Gdx.files.internal("map/landmarks.json").readString("UTF-8");
         Gdx.app.log("PTA", "startup: renderer");
         renderer = new it.pta.render.WorldRenderer(map, settings.renderHeight);
+        renderer.chunkManager().setMemoryBudget(memory.chunkBudgetBytes());
+        Gdx.app.log("PTA", memory.phase("after renderer"));
         Gdx.app.log("PTA", "startup: ui assets");
         assets = new UiAssets();
+        Gdx.app.log("PTA", memory.phase("after ui assets"));
         Gdx.app.log("PTA", "startup: audio");
         audio = new AudioEngine();
         input = new InputState();
@@ -102,6 +108,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         Gdx.app.log("PTA", "startup: world");
         world = new World(renderer, settings, audio, input, missionsJson, landmarksJson);
         world.setListener(this);
+        Gdx.app.log("PTA", memory.phase("after world"));
         rig = new CameraRig((float) Gdx.graphics.getWidth() / Math.max(1, Gdx.graphics.getHeight()));
         rig.setAspect((float) Gdx.graphics.getWidth() / Math.max(1, Gdx.graphics.getHeight()));
         Gdx.app.log("PTA", "startup: menu");
@@ -109,6 +116,7 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         intro = new IntroCinematic(assets, map);
         batch = new SpriteBatch();
         applySettings();
+        Gdx.app.log("PTA", memory.phase("after menu"));
         Gdx.app.log("PTA", "startup: intro");
         Gdx.input.setCatchKey(Input.Keys.BACK, true);
         Gdx.input.setInputProcessor(null);
@@ -131,9 +139,34 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         }
         try {
             renderFrame();
+        } catch (OutOfMemoryError oom) {
+            recoverFromOutOfMemory(oom);
         } catch (Throwable t) {
             fail(t);
         }
+    }
+
+    /**
+     * Last-resort handler: instead of dying on a small allocation, release every piece
+     * of streamed geometry the streamer can rebuild and drop to the cheapest preset.
+     * If the heap is still exhausted after a few attempts the fatal screen is shown,
+     * so the failure is visible instead of an endless recovery loop.
+     */
+    private void recoverFromOutOfMemory(OutOfMemoryError oom) {
+        oomRecoveries++;
+        Gdx.app.error("PTA", "OutOfMemoryError: releasing streamed geometry (attempt "
+                + oomRecoveries + ") " + memory.summary(), oom);
+        if (oomRecoveries > 3 || renderer == null || rig == null) {
+            fail(oom);
+            return;
+        }
+        renderer.chunkManager().trim(rig.camera.position, 9);
+        map.releaseAllChunks();
+        if (settings.preset != Settings.Preset.BASE) {
+            settings.applyPreset(Settings.Preset.BASE);
+            applySettings();
+        }
+        System.gc();
     }
 
     private void renderFrame() {
@@ -295,10 +328,12 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         input.moveY = 1f;
         input.run = smokeTime < 90f;
         rig.yaw += delta * (0.09f + 0.05f * MathUtils.sin(smokeTime * 0.35f));
-        if (smokeTime > 120f && smokeTime - delta <= 120f) {
+        // One progress line per minute: a long session must be auditable from logcat,
+        // including the heap after every minute of real streaming.
+        if ((int) (smokeTime / 60f) > (int) ((smokeTime - delta) / 60f)) {
             Player p = world.player();
-            Gdx.app.log("PTA", "smoke: walked 120s, player=" + p.x + "," + p.z
-                    + " " + renderer.chunkManager().stats());
+            Gdx.app.log("PTA", "smoke: t=" + (int) smokeTime + "s player=" + p.x + "," + p.z
+                    + " " + renderer.chunkManager().stats() + " " + memory.summary());
         }
     }
 
@@ -328,7 +363,10 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
                     + renderer.chunkManager().stats() + " fps=" + Gdx.graphics.getFramesPerSecond()
                     + " preset=" + settings.preset.label);
         }
-        if (pressure == MemoryBudget.Pressure.OK || mode != Mode.PLAY) {
+        // The menu and the opening cinematic stream the province too, so the trim has
+        // to run there as well: the old build only reacted during gameplay, which is
+        // exactly why the heap could fill up before the player ever pressed Play.
+        if (pressure == MemoryBudget.Pressure.OK) {
             return;
         }
         if (degradeCooldown > 0f) {
@@ -337,9 +375,10 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         }
         degradeCooldown = 6f;
         memory.countDegradation();
-        int keep = pressure == MemoryBudget.Pressure.CRITICAL ? 40 : 90;
+        int keep = pressure == MemoryBudget.Pressure.CRITICAL ? 25 : 60;
         int removed = renderer.chunkManager().trim(rig.camera.position, keep);
-        if (pressure == MemoryBudget.Pressure.CRITICAL && settings.preset != Settings.Preset.BASE) {
+        if (pressure == MemoryBudget.Pressure.CRITICAL && mode == Mode.PLAY
+                && settings.preset != Settings.Preset.BASE) {
             Settings.Preset lower = Settings.Preset.values()[
                     Math.max(0, settings.preset.ordinal() - 1)];
             settings.applyPreset(lower);

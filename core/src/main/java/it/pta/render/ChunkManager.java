@@ -63,17 +63,28 @@ public final class ChunkManager implements Disposable {
     public static final class Chunk {
         public final int cx, cz;
         public int lod;
-        public ChunkGeometry geometry;
         public Mesh[] parts;
         public Mesh water;
         public float centerX, centerY, centerZ, radius;
         public long lastUsed;
+        /** Compact glow positions (xyz triples) kept after the CPU geometry is freed. */
+        public float[] glows = EMPTY_GLOWS;
+        public int glowCount;
+        /** GPU bytes this chunk occupies, retained after the CPU staging arrays are freed. */
+        public int vertexBytes;
+        public int indexBytes;
 
         Chunk(int cx, int cz) {
             this.cx = cx;
             this.cz = cz;
         }
+
+        public int totalBytes() {
+            return vertexBytes + indexBytes;
+        }
     }
+
+    private static final float[] EMPTY_GLOWS = new float[0];
 
     private final MapData map;
     private final Map<Long, Chunk> chunks = new HashMap<>();
@@ -200,8 +211,7 @@ public final class ChunkManager implements Disposable {
                 int lod = lodFor(dist, existing);
                 if (existing != null) {
                     existing.lastUsed = frame;
-                    if (existing.geometry != null && existing.parts != null
-                            && existing.lod != lod && !building.contains(k)) {
+                    if (existing.parts != null && existing.lod != lod && !building.contains(k)) {
                         float score = dist - Math.max(0f, forward) * 260f;
                         requests.add(new Request(c, r, lod, k, dist, score));
                     }
@@ -294,72 +304,103 @@ public final class ChunkManager implements Disposable {
             if (c.parts != null) {
                 disposeMeshes(c);
             }
-            c.geometry = g;
+            g.finish();
             c.lod = g.lod;
             c.centerX = g.centerX;
             c.centerY = g.centerY;
             c.centerZ = g.centerZ;
             c.radius = g.radius;
             c.lastUsed = frame;
+            c.vertexBytes = g.vertexBytes;
+            c.indexBytes = g.indexBytes;
             c.parts = new Mesh[g.parts.size()];
-            for (int i = 0; i < g.parts.size(); i++) {
-                MeshBuilder mb = g.parts.get(i);
-                if (mb.isEmpty()) {
-                    continue;
+            try {
+                for (int i = 0; i < g.parts.size(); i++) {
+                    MeshBuilder mb = g.parts.get(i);
+                    if (mb.isEmpty()) {
+                        continue;
+                    }
+                    // Upload straight from the builder's array: no second full copy of
+                    // the vertices is created just to hand it to the GPU.
+                    Mesh m = new Mesh(true, mb.vertexCount, mb.indexCount, ATTRS);
+                    m.setVertices(mb.data, 0, mb.vertexCount * MeshBuilder.FLOATS_PER_VERTEX);
+                    m.setIndices(mb.indices, 0, mb.indexCount);
+                    c.parts[i] = m;
                 }
-                Mesh m = new Mesh(true, mb.vertexCount, mb.indexCount, ATTRS);
-                m.setVertices(mb.compactVertices());
-                m.setIndices(mb.compactIndices());
-                c.parts[i] = m;
+                if (!g.water.isEmpty()) {
+                    Mesh m = new Mesh(true, g.water.vertexCount, g.water.indexCount, ATTRS);
+                    m.setVertices(g.water.data, 0, g.water.vertexCount * MeshBuilder.FLOATS_PER_VERTEX);
+                    m.setIndices(g.water.indices, 0, g.water.indexCount);
+                    c.water = m;
+                }
+            } catch (Throwable t) {
+                // A failed GPU allocation must not take the whole game down: drop this
+                // chunk, free what was created and let the streamer retry it later.
+                buildsFailed.incrementAndGet();
+                Gdx.app.error("PTA", "chunk upload failed " + g.cx + "," + g.cz, t);
+                disposeMeshes(c);
+                c.vertexBytes = 0;
+                c.indexBytes = 0;
+                c.glows = EMPTY_GLOWS;
+                c.glowCount = 0;
+                chunks.remove(k);
+                g.releaseCpu();
+                continue;
             }
-            if (!g.water.isEmpty()) {
-                Mesh m = new Mesh(true, g.water.vertexCount, g.water.indexCount, ATTRS);
-                m.setVertices(g.water.compactVertices());
-                m.setIndices(g.water.compactIndices());
-                c.water = m;
-            }
+            // The GPU owns the geometry now: release the Java staging arrays so a
+            // resident chunk no longer costs 48 bytes per vertex in the heap.
+            c.glows = g.releaseCpu();
+            c.glowCount = g.glowCount;
             n++;
         }
     }
 
     private void evict(Vector3 pos) {
-        List<Chunk> drop = new ArrayList<>();
+        ArrayList<Chunk> live = new ArrayList<>();
         long bytes = 0;
         for (Chunk c : chunks.values()) {
             float dist = (float) Math.hypot(c.centerX - pos.x, c.centerZ - pos.z);
             boolean stale = dist > viewDistance + 420f;
             boolean old = frame - c.lastUsed > 90;
             if (stale || (old && dist > viewDistance + 200f)) {
-                drop.add(c);
-            } else if (c.geometry != null) {
-                bytes += c.geometry.vertexCount() * MeshBuilder.FLOATS_PER_VERTEX * 4L;
+                dropChunk(c);
+                continue;
             }
+            live.add(c);
+            bytes += c.totalBytes();
         }
-        // Budget: farthest chunks go first, but never the 3x3 around the player.
-        if (chunks.size() - drop.size() > maxLiveChunks || bytes > maxVertexBytes) {
-            ArrayList<Chunk> live = new ArrayList<>();
-            for (Chunk c : chunks.values()) {
-                if (!drop.contains(c)) {
-                    live.add(c);
-                }
-            }
-            live.sort((a, b) -> Float.compare(
-                    (float) Math.hypot(b.centerX - pos.x, b.centerZ - pos.z),
-                    (float) Math.hypot(a.centerX - pos.x, a.centerZ - pos.z)));
-            int keep = Math.max(9, Math.min(maxLiveChunks, chunks.size() - drop.size()));
-            for (int i = keep; i < live.size(); i++) {
-                drop.add(live.get(i));
-            }
+        // The byte budget is a hard limit, not a hint: the farthest chunks go first,
+        // but the 3x3 around the player is never touched so the ground under the
+        // camera cannot disappear while the budget is being enforced.
+        if (live.size() <= maxLiveChunks && bytes <= maxVertexBytes) {
+            return;
         }
-        for (Chunk c : drop) {
-            disposeMeshes(c);
-            chunks.remove(key(c.cx, c.cz));
-            // Drop the CPU copy too: a chunk that is not rendered must not keep its
-            // vertex arrays and glow positions alive in the Java heap.
-            c.geometry = null;
-            map.releaseChunk(c.cx, c.cz);
-            evicted++;
+        live.sort((a, b) -> Float.compare(
+                (float) Math.hypot(a.centerX - pos.x, a.centerZ - pos.z),
+                (float) Math.hypot(b.centerX - pos.x, b.centerZ - pos.z)));
+        for (int i = live.size() - 1; i >= 9
+                && (live.size() > maxLiveChunks || bytes > maxVertexBytes); i--) {
+            Chunk c = live.remove(i);
+            bytes -= c.totalBytes();
+            dropChunk(c);
         }
+        if (live.size() > maxLiveChunks || bytes > maxVertexBytes) {
+            // Below nine chunks the budget is impossible; keep them anyway, the
+            // camera needs something to stand on, and log the impossible state.
+            Gdx.app.log("PTA", "chunk budget exceeded with " + live.size()
+                    + " chunks and " + (bytes / 1048576) + "MB resident");
+        }
+    }
+
+    private void dropChunk(Chunk c) {
+        disposeMeshes(c);
+        chunks.remove(key(c.cx, c.cz));
+        c.vertexBytes = 0;
+        c.indexBytes = 0;
+        c.glows = EMPTY_GLOWS;
+        c.glowCount = 0;
+        map.releaseChunk(c.cx, c.cz);
+        evicted++;
     }
 
     private void disposeMeshes(Chunk c) {
@@ -415,14 +456,13 @@ public final class ChunkManager implements Disposable {
     public void collectGlows(Vector3 pos, float maxDist, com.badlogic.gdx.utils.FloatArray out) {
         float md2 = maxDist * maxDist;
         for (Chunk c : chunks.values()) {
-            ChunkGeometry g = c.geometry;
-            if (g == null || g.glowCount == 0) {
+            if (c.glowCount == 0 || c.glows.length < c.glowCount * 3) {
                 continue;
             }
-            for (int i = 0; i < g.glowCount; i++) {
-                float x = g.glows[i * 3];
-                float y = g.glows[i * 3 + 1];
-                float z = g.glows[i * 3 + 2];
+            for (int i = 0; i < c.glowCount; i++) {
+                float x = c.glows[i * 3];
+                float y = c.glows[i * 3 + 1];
+                float z = c.glows[i * 3 + 2];
                 float dx = x - pos.x, dz = z - pos.z;
                 if (dx * dx + dz * dz > md2) {
                     continue;
@@ -498,25 +538,27 @@ public final class ChunkManager implements Disposable {
         int removed = 0;
         for (int i = 0; i < live.size() - keep; i++) {
             Chunk c = live.get(i);
-            disposeMeshes(c);
-            chunks.remove(key(c.cx, c.cz));
-            c.geometry = null;
-            map.releaseChunk(c.cx, c.cz);
-            evicted++;
+            dropChunk(c);
             removed++;
         }
         return removed;
     }
 
+    /**
+     * Resident GPU vertex bytes. The CPU staging arrays are not counted because they
+     * no longer exist after the upload; the value is what the device really holds.
+     */
     public int vertexMemoryBytes() {
         int n = 0;
         for (Chunk c : chunks.values()) {
-            if (c.geometry == null) {
-                continue;
-            }
-            n += c.geometry.vertexCount() * MeshBuilder.FLOATS_PER_VERTEX * 4;
+            n += c.vertexBytes;
         }
         return n;
+    }
+
+    /** Sets the hard resident-geometry budget (vertex + index bytes). */
+    public void setMemoryBudget(long bytes) {
+        maxVertexBytes = Math.max(12L * 1024 * 1024, Math.min(bytes, 96L * 1024 * 1024));
     }
 
     public int buildsStarted() {
@@ -578,7 +620,10 @@ public final class ChunkManager implements Disposable {
         pool.shutdownNow();
         for (Chunk c : chunks.values()) {
             disposeMeshes(c);
-            c.geometry = null;
+            c.vertexBytes = 0;
+            c.indexBytes = 0;
+            c.glows = EMPTY_GLOWS;
+            c.glowCount = 0;
         }
         chunks.clear();
         finished.clear();

@@ -101,6 +101,20 @@ public final class MeshBuilder {
         quad(a, bb, c, d);
     }
 
+    private static final float[] EMPTY_FLOATS = new float[0];
+    private static final short[] EMPTY_SHORTS = new short[0];
+
+    /**
+     * Frees the CPU staging arrays once the data has been uploaded to the GPU.
+     * The builder must not be used again afterwards.
+     */
+    public void release() {
+        data = EMPTY_FLOATS;
+        indices = EMPTY_SHORTS;
+        vertexCount = 0;
+        indexCount = 0;
+    }
+
     /** Copies this builder's vertices into a compact array. */
     public float[] compactVertices() {
         return java.util.Arrays.copyOf(data, vertexCount * FLOATS_PER_VERTEX);

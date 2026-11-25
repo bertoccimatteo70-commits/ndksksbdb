@@ -15,9 +15,14 @@ package it.pta.game;
 public final class MemoryBudget {
     public enum Pressure {OK, HIGH, CRITICAL}
 
-    /** Fraction of the maximum heap the game may use before reacting. */
-    private static final float SOFT_LIMIT = 0.72f;
-    private static final float HARD_LIMIT = 0.88f;
+    /**
+     * Fraction of the maximum heap the game may use before reacting. The limits are
+     * on the budget, which is already a fraction of the heap: the remaining headroom
+     * absorbs the transient arrays of a chunk being built while the limit is crossed,
+     * so the process never reaches the ART heap limit that produced the OOM.
+     */
+    private static final float SOFT_LIMIT = 0.62f;
+    private static final float HARD_LIMIT = 0.80f;
 
     public final long budgetBytes;
     public float javaUsedMb;
@@ -55,6 +60,33 @@ public final class MemoryBudget {
 
     public void countDegradation() {
         degradations++;
+    }
+
+    /**
+     * Measures right now and describes the number for a startup-phase log line, so
+     * the memory used after every initialization step is recorded on the device.
+     */
+    public String phase(String label) {
+        Runtime rt = Runtime.getRuntime();
+        long used = rt.totalMemory() - rt.freeMemory();
+        javaUsedMb = used / 1048576f;
+        heapMaxMb = rt.maxMemory() / 1048576f;
+        nativeUsedMb = nativeHeapMb();
+        return "memory " + label + ": " + (int) javaUsedMb + "MB used, "
+                + (int) (rt.totalMemory() / 1048576f) + "MB allocated, "
+                + (int) heapMaxMb + "MB max, native "
+                + (nativeUsedMb < 0 ? "n/d" : (int) nativeUsedMb + "MB");
+    }
+
+    /**
+     * Resident chunk-geometry budget in bytes. Chunk meshes are GPU memory, not Java
+     * heap, so this is a separate limit: it keeps the whole streamed city (and its
+     * CPU staging during upload) small enough for a 3 GB device.
+     */
+    public long chunkBudgetBytes() {
+        long max = Runtime.getRuntime().maxMemory();
+        long budget = (long) (max * 0.35f);
+        return Math.max(40L * 1024 * 1024, Math.min(budget, 96L * 1024 * 1024));
     }
 
     /**

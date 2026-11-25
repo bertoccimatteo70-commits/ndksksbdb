@@ -20,6 +20,18 @@ public final class ChunkBuilder {
     private static final float STONE_TILING = 1f / 3f;
     private static final float ROOF_TILING = 1f / 2.6f;
 
+    /**
+     * Per-chunk vertex budget for the expensive facade detail. A dense 512 m chunk of
+     * the historic centre used to reach 264.000 vertices (12,4 MB) because every
+     * window, shutter, cornice and balcony was emitted for every building. Once the
+     * budget is reached, the remaining buildings are emitted as a shell plus roof:
+     * every OSM footprint is still in the chunk and on screen, only the extra detail
+     * is skipped. The city never shrinks, the worst case chunk does.
+     */
+    private static final int DETAIL_VERTEX_BUDGET = 26000;
+    /** Street furniture is drawn only while the chunk still has room for it. */
+    private static final int PROP_VERTEX_BUDGET = 34000;
+
     public static ChunkGeometry build(MapData map, int cx, int cz, int lod) {
         ChunkGeometry g = new ChunkGeometry(cx, cz, lod);
         float x0 = cx * map.chunkSize;
@@ -31,7 +43,7 @@ public final class ChunkBuilder {
         water(map, g, x0, z0, x1, z1);
         roads(map, g, cx, cz, x0, z0, x1, z1, lod);
         buildings(map, g, cx, cz, lod);
-        if (lod == 0) {
+        if (lod == 0 && g.vertexCount() < PROP_VERTEX_BUDGET) {
             props(map, g, cx, cz, x0, z0, x1, z1);
         }
 
@@ -463,6 +475,11 @@ public final class ChunkBuilder {
             MapData.Building b = map.building(idx);
             if (lod > 0) {
                 simpleBuilding(map, g, b, lod);
+                continue;
+            }
+            if (g.vertexCount() >= DETAIL_VERTEX_BUDGET) {
+                // Budget exhausted: keep the building, drop the facade detail.
+                simpleBuilding(map, g, b, 0);
                 continue;
             }
             detailedBuilding(map, g, b, idx);
