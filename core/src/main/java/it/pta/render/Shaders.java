@@ -164,7 +164,7 @@ public final class Shaders {
             + "  float sunDot = max(dot(dir, u_sunDir), 0.0);\n"
             + "  col += u_sunColor * pow(sunDot, 6.0) * 0.22;\n"
             + "  col += u_sunColor * pow(sunDot, 900.0) * 2.4;\n"
-            + "  if (dir.y > 0.015) {\n"
+            + "  if (dir.y > 0.015 && u_cloud > 0.01) {\n"
             + "    vec2 cuv = dir.xz / (dir.y + 0.18) * 1.35 + vec2(u_time * 0.004, u_time * 0.0022);\n"
             + "    float c = fbm(cuv * 1.7);\n"
             + "    float cover = smoothstep(0.52 - u_cloud * 0.35, 0.92, c);\n"

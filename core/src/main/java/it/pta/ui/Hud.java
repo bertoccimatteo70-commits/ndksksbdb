@@ -356,14 +356,16 @@ public final class Hud extends Actor {
         batch.draw(a.whiteRegion, cx, cy, 0, 1.5f * dp, a.dp(16), 3f * dp, 1f, 1f,
                 (float) Math.toDegrees(world.player().heading) - 90f);
 
-        // North marker and the current street name below the dial.
-        a.small.setColor(0.90f, 0.94f, 1f, 1f);
-        a.small.draw(batch, "N", cx - a.dp(5), cy + radius + a.dp(2));
+        // North marker inside the dial and the current street name above it: the
+        // bottom of the dial is where the action buttons live, and the old caption
+        // ended up on top of SALTA on a 1080p screen.
+        a.small.setColor(0.90f, 0.94f, 1f, 0.95f);
+        a.small.draw(batch, "N", cx + radius * 0.62f, cy + radius * 0.80f);
         if (!streetName.isEmpty()) {
             layout.setText(a.small, streetName);
             float nameW = Math.min(layout.width, radius * 1.7f);
             a.small.setColor(0.86f, 0.92f, 0.98f, 0.95f);
-            a.small.draw(batch, streetName, cx - nameW * 0.5f, cy - radius - a.dp(10), nameW,
+            a.small.draw(batch, streetName, cx - nameW * 0.5f, cy + radius + a.dp(1), nameW,
                     com.badlogic.gdx.utils.Align.center, false);
         }
         batch.setColor(Color.WHITE);

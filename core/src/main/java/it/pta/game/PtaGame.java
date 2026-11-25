@@ -544,6 +544,8 @@ public final class PtaGame extends ApplicationAdapter implements World.Listener,
         // step lowers the number of shaded pixels instead of the apparent quality.
         int height = Math.max(360, Math.round(settings.renderHeight * governor.resolutionScale()));
         renderer.configure(height, settings.viewDistance * governor.viewScale(), settings.fxaa);
+        renderer.chunkManager().setBuildConcurrency(governor.step() >= 1 ? 1 : 2);
+        renderer.setCloudScale(governor.step() >= 2 ? 0f : 1f);
         float traffic = settings.trafficDensity * governor.trafficScale();
         world.traffic.maxCars = Math.max(4, Math.round(16f * traffic));
         world.traffic.maxPeds = Math.max(6, Math.round(28f * traffic));

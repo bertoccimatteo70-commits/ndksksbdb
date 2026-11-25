@@ -45,6 +45,8 @@ public final class WorldRenderer implements Disposable {
     private float time;
     private float rain;
     private float clouds = 0.35f;
+    /** 0 removes the procedural cloud layer on low-end quality steps. */
+    private float cloudScale = 1f;
     public float fogStart = 220f;
     public float fogEnd = 900f;
     public int lastTriangles;
@@ -105,6 +107,11 @@ public final class WorldRenderer implements Disposable {
     public void setWeather(float rain, float clouds) {
         this.rain = Math.max(0f, Math.min(1f, rain));
         this.clouds = Math.max(0f, Math.min(1f, clouds));
+    }
+
+    /** Called by the adaptive quality governor; 0 skips the cloud noise entirely. */
+    public void setCloudScale(float scale) {
+        this.cloudScale = Math.max(0f, Math.min(1f, scale));
     }
 
     public void resize(int w, int h) {
@@ -197,7 +204,7 @@ public final class WorldRenderer implements Disposable {
         skyShader.setUniformf("u_sunColor", sun.color);
         skyShader.setUniformf("u_night", sun.night);
         skyShader.setUniformf("u_time", time);
-        skyShader.setUniformf("u_cloud", clouds);
+        skyShader.setUniformf("u_cloud", clouds * cloudScale);
         skyQuad.render(skyShader, GL20.GL_TRIANGLES);
         skyShader.end();
         gl.glDepthFunc(GL20.GL_LESS);

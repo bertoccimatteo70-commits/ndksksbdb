@@ -53,6 +53,8 @@ public final class ChunkManager implements Disposable {
     /** Bands of the distance-based LOD, metres. */
     private static final float LOD0_DIST = 240f;
     private static final float LOD1_DIST = 760f;
+    /** A chunk that leaves the request window is kept this long before eviction. */
+    private static final float STALE_SECONDS = 20f;
     /** Hysteresis around each band so LOD borders do not flip every frame. */
     private static final float LOD_HYSTERESIS = 45f;
     /** Hard cap on live chunk meshes, whatever the device. */
@@ -66,7 +68,8 @@ public final class ChunkManager implements Disposable {
         public Mesh[] parts;
         public Mesh water;
         public float centerX, centerY, centerZ, radius;
-        public long lastUsed;
+        /** Seconds since the streaming window last touched this chunk. */
+        public float lastUsed;
         /** Compact glow positions (xyz triples) kept after the CPU geometry is freed. */
         public float[] glows = EMPTY_GLOWS;
         public int glowCount;
@@ -97,6 +100,10 @@ public final class ChunkManager implements Disposable {
 
     private float viewDistance = 900f;
     private long frame;
+    /** Real seconds, so eviction does not turn into a rebuild loop at low fps. */
+    private float clock;
+    /** Builds allowed in flight; lowered by the quality governor on slow devices. */
+    private int maxInFlight = 2;
     private float focusX, focusZ;
     private boolean hasFocus;
     private float lastX, lastZ;
@@ -114,7 +121,9 @@ public final class ChunkManager implements Disposable {
         pool = Executors.newFixedThreadPool(2, r -> {
             Thread t = new Thread(r, "pta-chunk-builder");
             t.setDaemon(true);
-            t.setPriority(Thread.NORM_PRIORITY - 1);
+            // The GL thread owns the frame. Chunk builds are useful but must never
+            // compete with it on the same core, especially on a low-end phone.
+            t.setPriority(Thread.MIN_PRIORITY);
             return t;
         });
     }
@@ -164,6 +173,7 @@ public final class ChunkManager implements Disposable {
 
     public void update(Vector3 pos, float delta) {
         frame++;
+        clock += Math.max(0f, delta);
         uploadFinished(2);
         // Movement-derived focus when the caller did not supply one: the streaming
         // then follows the player's travel direction instead of only the camera.
@@ -214,7 +224,7 @@ public final class ChunkManager implements Disposable {
                 Chunk existing = chunks.get(k);
                 int lod = lodFor(dist, existing);
                 if (existing != null) {
-                    existing.lastUsed = frame;
+                    existing.lastUsed = clock;
                     if (existing.parts != null && existing.lod != lod && !building.contains(k)) {
                         float score = dist - Math.max(0f, forward) * 260f;
                         requests.add(new Request(c, r, lod, k, dist, score));
@@ -231,7 +241,7 @@ public final class ChunkManager implements Disposable {
         // first, which could starve the chunk under the player for a minute.
         requests.sort(Comparator.comparingDouble(a -> a.score));
         for (Request q : requests) {
-            if (building.size() >= 3) {
+            if (building.size() >= Math.max(1, maxInFlight)) {
                 break;
             }
             if (building.contains(q.key)) {
@@ -314,7 +324,7 @@ public final class ChunkManager implements Disposable {
             c.centerY = g.centerY;
             c.centerZ = g.centerZ;
             c.radius = g.radius;
-            c.lastUsed = frame;
+            c.lastUsed = clock;
             c.vertexBytes = g.vertexBytes;
             c.indexBytes = g.indexBytes;
             c.parts = new Mesh[g.parts.size()];
@@ -370,9 +380,14 @@ public final class ChunkManager implements Disposable {
         // chunk that is built is never thrown away by the next frame's eviction.
         float keepRadius = viewDistance + 750f;
         for (Chunk c : chunks.values()) {
-            float dist = (float) Math.hypot(c.centerX - pos.x, c.centerZ - pos.z);
+            // Distance to the chunk RECTANGLE, exactly like the request loop. Using
+            // the centre distance here evicted corner chunks that the request loop
+            // had just built (centre up to 1448 m while keepRadius was 1398 m at the
+            // last adaptive step): they were rebuilt and evicted every second, which
+            // is where the 2.600 chunk builds in five minutes came from.
+            float dist = distanceToChunk(c, pos.x, pos.z);
             boolean out = dist > keepRadius;
-            boolean old = frame - c.lastUsed > 90;
+            boolean old = clock - c.lastUsed > STALE_SECONDS;
             if (out || (old && dist > keepRadius - 200f)) {
                 stale.add(c);
                 continue;
@@ -404,6 +419,23 @@ public final class ChunkManager implements Disposable {
             Gdx.app.log("PTA", "chunk budget exceeded with " + live.size()
                     + " chunks and " + (bytes / 1048576) + "MB resident");
         }
+    }
+
+    private float distanceToChunk(Chunk c, float x, float z) {
+        float minX = c.cx * map.chunkSize;
+        float minZ = c.cz * map.chunkSize;
+        float nearestX = Math.max(minX, Math.min(x, minX + map.chunkSize));
+        float nearestZ = Math.max(minZ, Math.min(z, minZ + map.chunkSize));
+        return (float) Math.hypot(nearestX - x, nearestZ - z);
+    }
+
+    /**
+     * Chunk builds allowed in flight. The quality governor drops this to one when
+     * the device is already below the frame target, so streaming cannot starve the
+     * render thread.
+     */
+    public void setBuildConcurrency(int value) {
+        maxInFlight = Math.max(1, Math.min(2, value));
     }
 
     private void dropChunk(Chunk c) {
