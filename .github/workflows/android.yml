@@ -171,10 +171,22 @@ jobs:
           timeout 600 "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "emulator" \
             "platform-tools" "system-images;android-30;default;x86_64" < /dev/null \
             > sdk-install.log 2>&1 || fail "sdkmanager failed"
+          # The emulator only searches $ANDROID_AVD_HOME, $ANDROID_SDK_HOME/avd and
+          # $HOME/.android/avd for the .ini file. avdmanager on the hosted runner
+          # writes elsewhere unless the home is pinned, which is why every previous
+          # attempt reported "Unknown AVD name [pta]" and the process exited at once.
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
           echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n pta \
-            -k "system-images;android-30;default;x86_64" -d pixel_2 --force > avd.log 2>&1 \
+            -k "system-images;android-30;default;x86_64" -d pixel_2 \
+            -p "$ANDROID_AVD_HOME/pta.avd" --force > avd.log 2>&1 \
             || fail "AVD creation failed"
-          echo "hw.ramSize=2048" >> "$HOME/.android/avd/pta.avd/config.ini" || true
+          "$SDK/cmdline-tools/latest/bin/avdmanager" list avd >> avd.log 2>&1 || true
+          find "$HOME" -name 'pta.ini' >> avd.log 2>&1 || true
+          ls -la "$ANDROID_AVD_HOME" >> avd.log 2>&1 || true
+          echo "hw.ramSize=2048" >> "$ANDROID_AVD_HOME/pta.avd/config.ini" || true
+          [ -f "$ANDROID_AVD_HOME/pta.ini" ] || { cat avd.log; fail "the AVD was not created where the emulator looks for it"; }
           # Boot the emulator with the software GL stack. `-gpu off` (guest rendering)
           # and the host OpenGL path both exited during boot on the hosted runner, so
           # each renderer is tried in turn, keeping the diagnostics of every attempt.
@@ -270,6 +282,8 @@ jobs:
           name: PTA-device-smoke
           path: |
             smoke-startup.txt
+            avd.log
+            sdk-install.log
             smoke-logcat.txt
             smoke-crash.txt
             smoke-restart.txt
