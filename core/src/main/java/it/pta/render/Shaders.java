@@ -10,12 +10,15 @@ public final class Shaders {
             + "attribute vec2 a_texCoord0;\n"
             + "uniform mat4 u_projView;\n"
             + "uniform mat4 u_model;\n"
-            + "uniform vec3 u_camPos;\n"
+            // The fragment shader declares `precision mediump float`, so this shared
+            // uniform must be mediump here too: a mismatch is a link error that
+            // leaves the whole world shader uncompiled (caught by the CI smoke run).
+            + "uniform mediump vec3 u_camPos;\n"
             + "varying vec4 v_color;\n"
             + "varying vec3 v_normal;\n"
             + "varying vec2 v_uv;\n"
             + "varying vec3 v_world;\n"
-            + "varying float v_dist;\n"
+            + "varying mediump float v_dist;\n"
             + "void main() {\n"
             + "  vec4 wp = u_model * vec4(a_position, 1.0);\n"
             + "  v_world = wp.xyz;\n"
@@ -31,7 +34,7 @@ public final class Shaders {
     public static final String WORLD_FRAG =
             "#ifdef GL_ES\nprecision mediump float;\n#endif\n"
             + "uniform sampler2D u_tex;\n"
-            + "uniform vec3 u_camPos;\n"
+            + "uniform mediump vec3 u_camPos;\n"
             + "uniform vec3 u_sunDir;\n"
             + "uniform vec3 u_sunColor;\n"
             + "uniform vec3 u_ambient;\n"
@@ -44,7 +47,7 @@ public final class Shaders {
             + "varying vec3 v_normal;\n"
             + "varying vec2 v_uv;\n"
             + "varying vec3 v_world;\n"
-            + "varying float v_dist;\n"
+            + "varying mediump float v_dist;\n"
             + "void main() {\n"
             + "  float tile = floor(v_color.a + 0.5);\n"
             + "  float col = mod(tile, 4.0);\n"
